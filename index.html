@@ -4,9 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>메디패스 응급실 연결</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 :root {
@@ -235,18 +233,105 @@ button.need { border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font
 .dot.ok { background: var(--green) } .dot.busy { background: #F59E0B } .dot.full { background: var(--red) }
 .mk.c-ok { border-color: var(--green) } .mk.c-busy { border-color: #F59E0B } .mk.c-full { border-color: var(--red); background: var(--red-tint) }
 @media (max-width: 560px) { .tl-row { grid-template-columns: 1fr auto } .tl-track { grid-column: 1 / -1; grid-row: 2 } }
+
+/* ════════ 디자인 개편: 앱 화면 ════════
+ * 사용자는 응급 상황의 보호자. 화면의 일은 '지금 어디로 가야 하나'에 답하는 것.
+ * 색: 잉크 남색(글자) · 신호 빨강(119) · 진료 가능 초록 · 안내 파랑 · 메디패스 노랑(표시 하나에만)
+ */
+:root {
+  --bg: #EDF0F3; --card: #FFFFFF; --soft: #F3F5F8; --line: #DFE4EA; --line2: #CBD3DC;
+  --ink: #14202B; --sub: #46525E; --muted: #7C8793;
+  --red: #E0312B; --red-tint: #FDECEA; --green: #0F7B53; --green-tint: #E1F4EB; --blue: #1F5FD6; --blue-tint: #E8EFFC;
+  --amber-bg: #FDF1D6; --amber-ink: #9A4A07; --brand: #FFC21A;
+  --font: 'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --mono: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+  --nav-h: 0px;
+}
+body { font-size: 16px; line-height: 1.6; letter-spacing: -0.01em; padding: 0 20px 96px; -webkit-font-smoothing: antialiased }
+.num, .eta b, .gradebox b, .b-count b, .aed-list .d, .call { font-variant-numeric: tabular-nums }
+.card { box-shadow: none; border: 1px solid var(--line); border-radius: 16px }
+.hosp { box-shadow: none; border: 1px solid var(--line) }
+.hosp.first { border: 2px solid var(--ink); box-shadow: 0 12px 30px -18px rgba(20, 32, 43, .45) }
+.cap { font-size: 18px; letter-spacing: -0.02em }
+.label { font-size: 13px }
+
+/* 상단 앱 바 */
+.appbar { position: sticky; top: 0; z-index: 1100; margin: 0 -20px 14px; background: rgba(237, 240, 243, .94); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line) }
+.appbar-in { max-width: 1280px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 10px }
+.appbar .mark h1 { font-size: 22px; font-weight: 900; letter-spacing: -0.04em }
+.appbar .mark h1 i { transform: translateY(-9px) }
+.appbar .mark { flex: none } .appbar .mark h1 { white-space: nowrap }
+.locchip { margin-left: auto; min-width: 0; flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; max-width: 58vw; border: 1px solid var(--line2); background: #fff; border-radius: 999px; padding: 7px 12px 7px 9px; font-size: 14px; font-weight: 700 }
+.locchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.locchip svg, .iconbtn svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+.locchip[aria-expanded="true"], .iconbtn[aria-expanded="true"] { background: var(--ink); color: #fff; border-color: var(--ink) }
+.iconbtn { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid var(--line2); background: #fff; border-radius: 50% }
+.appbar .status { max-width: 1280px; margin: 0 auto; padding: 0 20px 8px; font-size: 12.5px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+/* 위치 바꾸기 · 데이터 연결: 필요할 때만 펼친다 */
+body:not(.where-open) #where-panel { display: none }
+body:not(.conn-open) #conn { display: none }
+#where-panel, #conn { max-width: 1280px; margin-inline: auto }
+#map-home { max-width: 1280px; margin: 0 auto 14px }
+body[data-tab="refs"] #map-home { display: none }
+
+/* 탭: 데스크톱은 위, 휴대폰은 아래 고정 내비게이션 */
+.tabs button { display: inline-flex; align-items: center; gap: 6px }
+.tabs svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+
+/* 언제나 닿는 119 */
+.fab119 { position: fixed; right: 18px; bottom: calc(18px + var(--nav-h) + env(safe-area-inset-bottom)); z-index: 1200; display: inline-flex; align-items: center; gap: 6px; background: var(--red); color: #fff; text-decoration: none; font-weight: 900; font-size: 18px; border-radius: 999px; padding: 12px 18px 12px 14px; box-shadow: 0 10px 24px -8px rgba(224, 49, 43, .6) }
+.fab119 svg { width: 20px; height: 20px; fill: currentColor }
+.foot { max-width: 1280px; margin: 24px auto 0; font-size: 12.5px; color: var(--muted) }
+
+/* 문진 결과: 판단 띠 */
+.tri-res .decide { margin: -20px -20px 14px; padding: 18px 20px; border-radius: 16px 16px 0 0 }
+.tri-res.lv1 .decide { background: var(--red); color: #fff } .tri-res.lv1 .decide p { color: #FFE3E1 } .tri-res.lv1 .big { color: #fff }
+.tri-res.lv1 .call { background: #fff; color: var(--red) }
+.tri-res.lv2 .decide { background: #FFEDD9 } .tri-res.lv3 .decide { background: var(--amber-bg) }
+.alarm, .go { border-top-width: 1px }
+.tri-res.alarm, .tri-res.go { border-top: 1px solid var(--line) }
+
+/* 추천 병원: 큰 행동 버튼 */
+.hosp.first .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+.hosp.first .actions a { justify-content: center; padding: 14px; font-size: 16px }
+.hosp.first .actions a:nth-child(3) { grid-column: 1 / -1; padding: 8px; font-size: 13px; border: 0; color: var(--sub) }
+.hosp .way { margin-top: 8px; font-size: 13.5px; color: var(--sub) }
+
+@media (max-width: 760px) {
+  :root { --nav-h: 64px }
+  body { padding: 0 14px calc(150px + env(safe-area-inset-bottom)) }
+  .appbar { margin: 0 -14px 12px } .appbar-in { padding: 9px 14px } .appbar .status { padding: 0 14px 7px }
+  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1150; margin: 0; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; background: #fff; border-top: 1px solid var(--line); max-width: none }
+  .tabs button { flex-direction: column; gap: 2px; padding: 6px 2px; border-radius: 12px; font-size: 11.5px; font-weight: 700 }
+  .tabs svg { width: 22px; height: 22px }
+  .tabs button[aria-selected="true"] { background: var(--soft); color: var(--ink) }
+  .card { padding: 16px; border-radius: 14px }
+  .tri-res .decide { margin: -16px -16px 12px; padding: 16px; border-radius: 14px 14px 0 0 }
+  .wz-q { font-size: 20px }
+}
+#tab-public { max-width: 860px; margin-inline: auto }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important } }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="mark"><h1>메디패스<i></i></h1><span>응급실 연결</span></div>
+<header class="appbar">
+  <div class="appbar-in">
+    <div class="mark"><h1>메디패스<i></i></h1></div>
+    <button type="button" class="locchip" id="loc-chip" aria-expanded="false" aria-controls="where-panel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>
+      <span id="loc-txt">위치 확인 중</span>
+    </button>
+    <button type="button" class="iconbtn" id="conn-btn" aria-label="데이터 연결 설정" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+  </div>
   <div class="status" id="status">불러오는 중…</div>
 </header>
-<p class="banner"><b>참고용 정보입니다.</b> 생명이 위급하면 망설이지 말고 <a href="tel:119">119</a>에 전화하세요. 병원 정보는 국립중앙의료원 실시간 자료이며, 병원 사정으로 실제와 다를 수 있습니다.</p>
 
 <section class="card conn" id="conn" hidden></section>
 
-<section class="card where">
+<section class="card where" id="where-panel">
   <div class="where-row">
     <label>시도<select id="sido"></select></label>
     <label>시군구<input id="sigungu" list="gu-list" placeholder="예: 강남구"></label>
@@ -259,14 +344,14 @@ button.need { border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font
   </form>
   <ul class="search-res" id="search-res" hidden></ul>
   <p class="caption" id="where-note"></p>
-  <div id="map-home"><div class="mapbox"><div id="map" aria-label="병원 지도"></div><div class="route-note caption" id="route-note"></div></div></div>
 </section>
+<section id="map-home"><div class="mapbox"><div id="map" aria-label="병원 지도"></div><div class="route-note caption" id="route-note"></div></div></section>
 
 <nav class="tabs" role="tablist">
-  <button role="tab" data-tab="public" aria-selected="true">일반인</button>
-  <button role="tab" data-tab="ems" aria-selected="false">119 구급대</button>
-  <button role="tab" data-tab="board" aria-selected="false">응급실 현황</button>
-  <button role="tab" data-tab="refs" aria-selected="false">근거 · 한계</button>
+  <button role="tab" data-tab="public" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9z"/><path d="M7 5H5v15h14V5h-2"/><path d="M9 12h6M12 9v6"/></svg><span>증상 문진</span></button>
+  <button role="tab" data-tab="ems" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 16V8h11v8"/><path d="M14 11h4l3 3v2h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M8.5 9.5v4M6.5 11.5h4"/></svg><span>구급대원</span></button>
+  <button role="tab" data-tab="board" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>실시간 현황</span></button>
+  <button role="tab" data-tab="refs" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/></svg><span>근거·한계</span></button>
 </nav>
 
 <main>
@@ -400,6 +485,8 @@ button.need { border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font
   </section>
 </main>
 <datalist id="gu-list"></datalist>
+<a class="fab119" href="tel:119" aria-label="119에 전화하기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg>119</a>
+<footer class="foot">참고용 정보입니다. 생명이 위급하면 망설이지 말고 119에 전화하세요. 병원 정보는 국립중앙의료원 실시간 자료이며, 병원 사정으로 실제와 다를 수 있습니다.</footer>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 var __mods = {}, __cache = {};
@@ -466,7 +553,8 @@ function hospitalFromBeds(b) {
       or: bed(b.hvoc, b.hvs22), traumaOr: bed(b.hv39, b.hvs23), icuGeneral: bed(b.hvicc, b.hvs17), icuMed: bed(b.hv2, b.hvs06), icuSurg: bed(b.hv3, b.hvs07),
       icuNeuro: bed(b.hvcc, b.hvs11), icuNs: bed(b.hv6, b.hvs12), icuCardio: bed(b.hv34, b.hvs15), icuChest: bed(b.hvccc, b.hvs16), icuTrauma: bed(b.hv9, b.hvs14), icuBurn: bed(b.hv8, b.hvs13),
       icuEr: bed(b.hv31, b.hvs05), nicu: bed(b.hvncc, b.hvs08), picu: bed(b.hv32, b.hvs09), picuEr: bed(b.hv33, b.hvs10),
-      delivery: bed(b.hv42, b.hvs26), burnRoom: bed(b.hv43, b.hvs36), traumaResus: bed(b.hv60, b.hvs60), ward: bed(b.hvgc, b.hvs38)
+      delivery: bed(b.hv42, b.hvs26), burnRoom: bed(b.hv43, b.hvs36), traumaResus: bed(b.hv60, b.hvs60), ward: bed(b.hvgc, b.hvs38),
+      zoneNeg: bed(b.hv13, b.hvs46), zoneGen: bed(b.hv14, b.hvs47), pedsIsoNeg: bed(b.hv15), pedsIsoGen: bed(b.hv16), psych: bed(b.hv40, b.hvs24)
     },
     equip: { ct: yn(b.hvctayn), mri: yn(b.hvmriayn), angio: yn(b.hvangioayn), venti: yn(b.hvventiayn), ventiPreterm: yn(b.hvventisoayn), incubator: yn(b.hvincuayn), crrt: yn(b.hvcrrtayn), ecmo: yn(b.hvecmoayn), hyperbaric: yn(b.hvoxyayn), hypothermia: yn(b.hvhypoayn), ambulance: yn(b.hvamyn) }
   };
@@ -493,7 +581,7 @@ function merge(region) {
     h.messages.push({ kind: m.symblkmsgtyp || null, disease: m.symtypcodmag || null, code: m.symtypcod || null, text: m.symblkmsg || '', start: m.symblksttdtm || null, end: m.symblkenddtm || null, shown: m.symoutdspyon || null });
   });
   (region.trauma || []).forEach(function (t) { var h = get(t.hpid); h.trauma = true; h.name = h.name || t.dutyname; if (h.lat == null) { h.lat = num(t.wgs84lat || t.latitude); h.lon = num(t.wgs84lon || t.longitude); } });
-  (region.basic || []).forEach(function (b) { var h = get(b.hpid); h.depts = (b.dgididname || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean); });
+  (region.basic || []).forEach(function (b) { var h = get(b.hpid); h.depts = (b.dgididname || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean); h.mapimg = b.dutymapimg || h.mapimg || null; h.erTel = h.erTel || b.dutytel3 || null; });
   return Array.from(byId.values()).filter(function (h) { return h.name && (h.hasBeds || h.lat != null); });
 }
 
@@ -663,10 +751,14 @@ Service.prototype.nearby = async function (lat, lon, maxRegions, rows, basicN) {
   if (!near.ok) return { ok: false, message: near.message, code: near.code };
   var regions = [], seen = {};
   (near.items || []).forEach(function (it) { var rg = N.regionOf(it.dutyaddr); if (rg && !seen[rg.join(' ')] && regions.length < max) { seen[rg.join(' ')] = 1; regions.push(rg); } });
+  // 외상센터는 시도마다 몇 곳뿐이라 가까운 시군구에 없을 수 있다 → 위치 기준 가장 가까운 외상센터 2곳의 지역을 항상 포함
+  var tn = await this.client.call('traumaNearby', { WGS84_LON: lon, WGS84_LAT: lat, pageNo: 1, numOfRows: 2 });
+  (tn.items || []).forEach(function (it) { var rg = N.regionOf(it.dutyaddr); if (rg && !seen[rg.join(' ')]) { seen[rg.join(' ')] = 1; regions.push(rg); } });
   var all = await Promise.all(regions.map(function (rg) { return self.regionData(rg[0], rg[1], basicN); }));
   var raw = { list: [], beds: [], severe: [], messages: [], trauma: [], basic: [] };
   all.forEach(function (d) { Object.keys(raw).forEach(function (k) { raw[k] = raw[k].concat(d.raw[k]); }); });
   (near.items || []).forEach(function (it) { raw.list.push({ hpid: it.hpid, dutyname: it.dutyname, dutyaddr: it.dutyaddr, latitude: it.latitude, longitude: it.longitude, dutytel1: it.dutytel1 }); });
+  (tn.items || []).forEach(function (it) { raw.trauma.push(it); raw.list.push({ hpid: it.hpid, dutyname: it.dutyname, dutyaddr: it.dutyaddr, latitude: it.latitude, longitude: it.longitude, dutytel1: it.dutytel1 }); });
   var errors = [].concat.apply([], all.map(function (d) { return d.errors; }));
   return { ok: true, demo: all.some(function (d) { return d.demo; }) || !!near.demo, stale: all.some(function (d) { return d.stale; }), fetchedAt: Date.now(), errors: errors, regions: regions.map(function (r) { return r.join(' '); }), hospitals: N.merge(raw) };
 };
@@ -904,8 +996,9 @@ module.exports = { Service: Service };
     ecmo: { label: 'ECMO', test: eq('ecmo'), msg: /ECMO|에크모/i },
     hypothermia: { label: '중심체온조절 (저체온치료)', test: eq('hypothermia'), msg: /체온/ },
     incubator: { label: '인큐베이터', test: eq('incubator'), msg: /인큐베이터/ },
-    isoNeg: { label: '음압격리 병상', test: bedAvail('isoNeg'), msg: /격리/ },
-    isoAny: { label: '격리 병상', test: any(bedAvail('isoNeg'), bedAvail('isoGen')), msg: /격리/ },
+    isoNeg: { label: '음압격리 병상', test: any(bedAvail('isoNeg'), bedAvail('zoneNeg')), msg: /격리/ },
+    isoAny: { label: '격리 병상', test: any(bedAvail('isoNeg'), bedAvail('isoGen'), bedAvail('zoneNeg'), bedAvail('zoneGen'), bedAvail('pedsIsoNeg'), bedAvail('pedsIsoGen')), msg: /격리/ },
+    psychBed: { label: '정신과 폐쇄병동 병상', test: bedAvail('psych'), msg: /정신/ },
     or: { label: '수술실', test: bedAvail('or'), msg: /수술/ },
     icu: { label: '중환자실', test: bedAvail('icuGeneral'), msg: /중환자/ },
     icuCardio: { label: '심장내과 중환자실', test: bedAvail('icuCardio'), msg: /중환자/ },
@@ -1006,7 +1099,7 @@ module.exports = { Service: Service };
         break;
       case 'anaphylaxis': add('erBed', 'pref'); add('venti', 'pref'); break;
       case 'seizure': add('ct', 'pref'); if (child) add('pedsBed', 'pref'); break;
-      case 'psych': add('s24', 'pref', '정신과 폐쇄병동'); break;
+      case 'psych': add('s24', 'pref', '정신과 폐쇄병동'); add('psychBed', 'pref'); break;
       case 'eye': add('s25', 'must'); break;
       case 'renal': add('s22', 'must', '응급 투석'); break;
       // ── 일반인 문진(MPTriage)에서 오는 질환군 ──
@@ -1837,7 +1930,9 @@ module.exports = { Service: Service };
       lsSet(CFG, cfg);
       window.MPSource = makeSource(); render(); window.MPApp.reload().then(function () {
         var u = document.getElementById('conn-usage'); if (u) u.textContent = usageText();
-        if (document.querySelector('#status .pill.no')) document.querySelector('#conn details').open = true; // 실패하면 설정을 다시 펼친다
+        if (document.querySelector('#status .pill.no')) { document.querySelector('#conn details').open = true; document.body.classList.add('conn-open'); } // 실패하면 설정을 다시 펼친다
+        else document.body.classList.remove('conn-open');
+        var cb = document.getElementById('conn-btn'); if (cb) cb.setAttribute('aria-expanded', document.body.classList.contains('conn-open'));
       });
     });
     var f = el.querySelector('#conn-forget');
@@ -1845,6 +1940,7 @@ module.exports = { Service: Service };
   }
 
   if (cfg.mode === 'direct' && !key) cfg.mode = null; // 키를 기억하지 않았으면 다시 입력
+  if (!cfg.mode) document.body.classList.add('conn-open'); // 연결 설정이 없으면 처음부터 펼친다
   window.MPSource = makeSource();
   document.addEventListener('DOMContentLoaded', render);
   if (document.readyState !== 'loading') render();
@@ -1979,18 +2075,21 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     return Promise.resolve(p).then(function (d) {
       if (!d.ok && !(d.hospitals || []).length) throw new Error(d.message || (d.errors || []).join(', ') || '조회 실패');
       apply(d); $('#where-note').textContent = note || '';
-    }).catch(function (e) { $('#status').innerHTML = '<span class="pill no">오류</span> ' + esc(e.message); })
+    }).catch(function (e) { $('#status').innerHTML = '<span class="pill no">오류</span> ' + esc(e.message); var t = $('#loc-txt'); if (t) t.textContent = '위치·연결 확인'; })
       .then(function () { S.loading = false; });
   }
   function regionReq() { return { kind: 'region', sido: $('#sido').value, gu: $('#sigungu').value.trim() }; }
+  function closeWhere() { document.body.classList.remove('where-open'); var c = $('#loc-chip'); if (c) c.setAttribute('aria-expanded', 'false'); }
+  function locText() { var t = $('#loc-txt'); if (t) t.textContent = (S.origin ? (S.scope ? '내 위치 · 넓게 ' : '내 위치 · ') : '') + (S.regions[0] || '지역 선택'); }
   function apply(d) {
+    closeWhere();
     S.last = {}; S.gen++; S.loadedAt = Date.now(); S.hospitals = d.hospitals || []; S.demo = !!d.demo; S.fetchedAt = d.fetchedAt || Date.now(); S.regions = d.regions || [];
     if (d.origin) S.origin = d.origin;
     var warn = (d.errors || []).length ? ' · 일부 항목 조회 실패 ' + d.errors.length + '건' : '';
     $('#status').innerHTML = (S.demo ? '<span class="pill alt">테스트 데이터</span> ' : '<span class="pill ok">실시간</span> ') +
       '병원 ' + S.hospitals.length + '곳 · ' + esc(S.regions.length > 3 ? S.regions.slice(0, 3).join(', ') + ' 외 ' + (S.regions.length - 3) + '곳' : S.regions.join(', ')) + ' · ' + fmtTime(S.fetchedAt) + ' 기준 · ' + refreshMin() + '분마다 자동 갱신' + (d.stale ? ' · <b>캐시된 이전 자료</b>' : '') + esc(warn);
     if (!S.origin) $('#where-note').textContent = '현재 위치를 쓰면 도착 예상 시간으로 순위를 매깁니다. 지역 조회만으로는 거리 계산을 하지 않습니다.';
-    renderBoard(); renderPublic(); renderEms(); routeNote();
+    locText(); renderBoard(); renderPublic(); renderEms(); routeNote();
     if (!S.last[visibleTab()]) drawMap(null);
   }
 
@@ -2061,7 +2160,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     var mb = $('.mapbox'), target = slot || $('#map-home'); if (!mb || !target || mb.parentNode === target) return;
     target.appendChild(mb); if (MAP) setTimeout(function () { MAP.invalidateSize(); }, 60);
   }
-  function placeMap() { var slot = $('#pub-mapslot'); mapTo(visibleTab() === 'tab-public' && slot ? slot : null); }
+  function placeMap() { var slot = $('#pub-mapslot'); mapTo(visibleTab() === 'tab-public' && slot ? slot : null); if (MAP) setTimeout(function () { MAP.invalidateSize(); }, 60); }
   function visibleTab() { var t = $$('.tab').filter(function (x) { return !x.hidden; })[0]; return t ? t.id : null; }
   function setOrigin(o, note) {
     resetScope();
@@ -2255,7 +2354,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
       '<div class="hhead"><div>' + (first ? '<span class="tagline">추천</span>' : '') + '<h3>' + esc(h.name) + '</h3><div class="caption">' + esc([h.type, h.trauma ? '권역외상센터' : '', h.addr].filter(Boolean).join(' · ')) + '</div></div>' +
       '<div class="eta">' + etaHtml(r) + '</div></div>' +
       '<div class="pills">' + (callSt(h.hpid) && callSt(h.hpid).st === 'yes' ? '<span class="pill ok">전화로 수용 확인됨</span>' : '') + crowdPill(r) + (r.walkOk && !critical ? '<span class="pill ok">걸어가도 비슷해요 · 도보 ' + r.foot.min + '분</span>' : '') + (r.stale ? '<span class="pill alt">' + (r.ageMin == null ? '갱신시각 없음' : r.ageMin + '분 전 정보') + '</span>' : '<span class="pill off">' + r.ageMin + '분 전 갱신</span>') + '</div>' +
-      '<div class="cells">' + r.cells.map(cell).join('') + '</div>';
+      '<div class="cells">' + r.cells.map(cell).join('') + '</div>' + (h.mapimg ? '<div class="way">찾아가는 길: ' + esc(h.mapimg) + '</div>' : '');
     if (r.blocking.length || r.notes.length) html += '<ul class="notes">' + r.blocking.map(function (m) { return '<li class="msg">병원 메시지: ' + esc(m.text) + '</li>'; }).join('') + r.notes.filter(function (n) { return n.indexOf('병원 메시지') !== 0; }).map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>';
     if (!first && call) html += '<div class="actions"><a class="ghost" href="tel:' + tel(call) + '">응급실 전화 ' + esc(call) + '</a></div>';
     html += callRec(r);
@@ -2265,7 +2364,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
         (h.lat != null && S.origin ? '<a class="ghost" target="_blank" rel="noopener" href="https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=' + S.origin.lat + '%2C' + S.origin.lon + '%3B' + h.lat + '%2C' + h.lon + '">OSM 경로</a>' : '') + '</div>';
       if (p) {
         var txt = L.preNotify(p, r, grade);
-        html += '<details class="pre" open><summary>사전 연락 문구 (전화 전 확인용)</summary><pre>' + esc(txt) + '</pre><button class="ghost copy" data-copy="' + esc(txt) + '">복사</button></details>';
+        html += '<details class="pre"' + (grade ? ' open' : '') + '><summary>전화할 때 읽을 내용</summary><pre>' + esc(txt) + '</pre><button class="ghost copy" data-copy="' + esc(txt) + '">복사</button></details>';
       }
     }
     return html + '</article>';
@@ -2591,6 +2690,9 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     $('#cond').innerHTML = Object.keys(L.CONDITIONS).map(function (k) { return '<option value="' + k + '">' + esc(L.CONDITIONS[k]) + '</option>'; }).join('');
     $('#cond').value = 'other';
     document.body.dataset.tab = 'public';
+    function panel(cls, btn) { var on = document.body.classList.toggle(cls); $(btn).setAttribute('aria-expanded', on); if (on) window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    $('#loc-chip').addEventListener('click', function () { panel('where-open', '#loc-chip'); });
+    $('#conn-btn').addEventListener('click', function () { panel('conn-open', '#conn-btn'); });
     renderSituations(); renderRefs(); bindTriage();
     $$('.tabs [role=tab]').forEach(function (b) { b.addEventListener('click', function () { $$('.tabs [role=tab]').forEach(function (x) { x.setAttribute('aria-selected', x === b); }); $$('.tab').forEach(function (t) { t.hidden = t.id !== 'tab-' + b.dataset.tab; }); document.body.dataset.tab = b.dataset.tab; placeMap(); drawMap(S.last['tab-' + b.dataset.tab] || null); }); });
     $('#ems-form').addEventListener('input', renderEms); $('#ems-form').addEventListener('change', renderEms);
