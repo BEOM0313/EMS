@@ -108,6 +108,36 @@ input, select { background: #fff; border: 1px solid var(--line2); border-radius:
 body[data-tab="public"] #map-home { display: none }
 #pub-mapslot .mapbox { margin: 0 0 14px }
 details.more > summary, details.fold > summary { cursor: pointer; font-weight: 800; font-size: 14px }
+/* 직접 측정 도구 */
+.tools { display: grid; gap: 8px }
+.tool { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; background: #fff }
+.tool summary { cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 15.5px; list-style: none }
+.tool summary::after { content: '재기'; margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--blue) }
+.tool[open] summary::after { content: '접기' }
+.vval { background: var(--ink); color: #fff; border-radius: 8px; padding: 1px 8px; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums }
+.counter { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; margin: 8px 0 }
+.tapbtn { border: 0; border-radius: 14px; background: var(--ink); color: #fff; min-height: 76px; display: grid; place-items: center; font-weight: 700 }
+.tapbtn b { font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums } .tapbtn span { font-size: 12px; opacity: .8 } .tapbtn:disabled { opacity: .35 }
+.tapbtn.wide { grid-column: 1 / -1 }
+.vin { flex-direction: row; align-items: center; gap: 8px; margin-top: 6px } .vin input { max-width: 140px; font-size: 18px }
+.painrow { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; margin-top: 6px }
+.pn { border: 1px solid var(--line2); background: #fff; border-radius: 8px; padding: 8px 0; font-weight: 800; font-size: 14px }
+.pn[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink) }
+.hint { margin-top: 6px; font-size: 13px; font-weight: 700 } .hint-bad { color: var(--red) } .hint-ok { color: var(--green) }
+/* 갈 곳 등급 */
+.tier { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: var(--soft) }
+.tier h3 { margin: 0 0 4px; font-size: 16px; font-weight: 800 }
+.ladder { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px }
+.ladder li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: center; font-size: 13.5px; color: var(--muted); padding: 6px 8px; border-radius: 10px }
+.ladder li i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line2); justify-self: center }
+.ladder li.on { background: #fff; color: var(--ink); font-weight: 800; box-shadow: inset 0 0 0 2px var(--ink) } .ladder li.on i { background: var(--ink); border-color: var(--ink) }
+.ladder li small { display: block; font-weight: 500; color: var(--sub) }
+.kindtag { display: inline-block; font-size: 12px; font-weight: 800; border-radius: 6px; padding: 1px 7px; margin-right: 4px; background: var(--soft); color: var(--sub) }
+.kindtag.peds { background: #E7F0FF; color: var(--blue) }
+.dalbit { border-top: 4px solid #F2C94C }
+.dal-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px }
+.dal-list li { background: var(--soft); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center }
+.dal-list li .meta { grid-column: 1; font-size: 13px; color: var(--sub) } .dal-list li a { grid-row: 1 / span 2; grid-column: 2 }
 /* 자동심장충격기 */
 .aed { border-top: 6px solid var(--green) } .aed .cap { color: var(--green) }
 .aed-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px }
@@ -985,7 +1015,28 @@ module.exports = { Service: Service };
   function dept(re) { return function (h) { if (!h.depts || !h.depts.length) return null; return h.depts.some(function (d) { return re.test(d); }); }; }
   function any() { var fs = [].slice.call(arguments); return function (h) { var r = fs.map(function (f) { return f(h); }); if (r.indexOf(true) >= 0) return true; if (r.indexOf(null) >= 0) return null; return false; }; }
 
+  // 응급의료기관 종류 (응급의료법 제25~31조). 목록 API의 dutyEmcls: G001 권역응급의료센터 · G006 지역응급의료센터 · G007 지역응급의료기관
+  function kind(h) {
+    var c = h.typeCode || '', t = h.type || '';
+    if (c === 'G001' || /권역응급의료센터/.test(t)) return 'regional';
+    if (c === 'G006' || /지역응급의료센터/.test(t)) return 'center';
+    if (c === 'G007' || /지역응급의료기관/.test(t)) return 'local';
+    return t ? 'other' : null;
+  }
+  // 소아전문응급의료센터 14곳 (보건복지부 '소아전문응급의료센터 현황', 2026.5 신규 2곳 포함). API 기관명과 맞추기 위해 공백·'의과대학'·'부속' 등을 지우고 비교
+  var PEDS_CENTERS = [
+    ['순천향대학교 부속 천안병원', /순천향.*천안/], ['차의과대학교 분당차병원', /분당차/], ['서울아산병원', /서울아산병원/], ['서울대학교병원', /^서울대학교병원$/],
+    ['가천대길병원', /길병원/], ['칠곡경북대학교병원', /칠곡경북대/], ['양산부산대학교병원', /양산부산대/], ['세브란스병원', /^(연세대학교)?(의과대학)?세브란스병원$/],
+    ['인하대학교병원', /^인하대(학교)?(의과대학)?(부속)?병원$/], ['세종충남대학교병원', /세종충남대/], ['예수병원', /^(전주)?예수병원$/], ['아주대학교병원', /^아주대(학교)?(병원|의료원)$/],
+    ['가톨릭대학교 성빈센트병원', /성빈센트/], ['가톨릭대학교 서울성모병원', /서울성모병원/]
+  ];
+  function pedsCenter(h) { var n = String(h.name || '').replace(/\s|\(.*?\)|학교법인|재단법인|의료법인|부속|의과대학/g, ''); return PEDS_CENTERS.some(function (x) { return x[1].test(n); }); }
+
   var R = {
+    tierRegional: { label: '권역응급의료센터', test: function (h) { var k = kind(h); return k == null ? null : k === 'regional'; }, msg: /응급실|병상/ },
+    tierCenter: { label: '응급의료센터 (권역·지역)', test: function (h) { var k = kind(h); return k == null ? null : k === 'regional' || k === 'center'; }, msg: /응급실|병상/ },
+    tierLocal: { label: '경증 진료에 맞는 기관 (지역응급의료기관·지역센터)', test: function (h) { var k = kind(h); return k == null ? null : k !== 'regional'; }, msg: /응급실|병상/ },
+    pedsCenter: { label: '소아전문응급의료센터', test: function (h) { return pedsCenter(h) ? true : h.name ? false : null; }, msg: /소아/ },
     erBed: { label: '응급실 병상', test: bedAvail('er'), msg: /응급실|병상|만실|포화/ },
     pedsBed: { label: '소아 응급병상', test: bedAvail('peds'), msg: /소아/ },
     pedsDept: { label: '소아청소년과 진료과 (진료과목 기준)', test: dept(/소아/), msg: /소아/ },
@@ -1180,7 +1231,9 @@ module.exports = { Service: Service };
       var cells = needs.map(function (n) { var r = R[n.key], v = r ? r.test(h) : null; return { key: n.key, label: r ? r.label : n.key, level: n.level, why: n.why, ok: v }; });
       var missing = cells.filter(function (c) { return c.level === 'must' && c.ok === false; });
       var unknown = cells.filter(function (c) { return c.level === 'must' && c.ok === null; });
-      var prefs = cells.filter(function (c) { return c.level === 'pref' && c.ok === true; }).length;
+      var PW = { pedsCenter: 8, tierRegional: 6, tierLocal: 6 }; // 기관 종류 선호는 일반 선호(4)보다 무겁게
+      var prefCells = cells.filter(function (c) { return c.level === 'pref' && c.ok === true; }), prefs = prefCells.length;
+      var prefW = prefCells.reduce(function (a, c) { return a + (PW[c.key] || 4); }, 0);
       var msgs = msgRelevant(h, needs, now);
       var blocking = msgs.filter(function (m) { return m.relevantTo.length; });
       var er = h.beds && h.beds.er ? h.beds.er : {};
@@ -1194,8 +1247,9 @@ module.exports = { Service: Service };
       pen += unknown.length * 6; if (unknown.length) notes.push('필수 항목 미확인: ' + unknown.map(function (c) { return c.label; }).join(', '));
       pen += blocking.length * 10; blocking.forEach(function (m) { notes.push('병원 메시지: ' + m.text); });
       if (stale) { pen += 2; notes.push(ageMin == null ? '갱신 시각 없음' : ageMin + '분 전 정보'); }
+      if (opts.mild && kind(h) === 'regional') { pen += 8; notes.push('경증이면 권역응급의료센터 진료비 본인부담 90% (2024.9~) · 중증 환자 진료를 위해 비워 두는 곳'); }
       var w = timeCritical ? 2 : 1;
-      var score = (eta != null ? eta * w : 30) + pen - prefs * 4;
+      var score = (eta != null ? eta * w : 30) + pen - prefW;
       return { h: h, km: km, eta: eta, etaSrc: rc ? 'route' : 'estimate', foot: foot, walkOk: walkOk, cells: cells, eligible: missing.length === 0, missing: missing, unknown: unknown, prefs: prefs, crowd: crowd, ageMin: ageMin, stale: stale, messages: msgs, blocking: blocking, notes: notes, score: score };
     });
     // 필수 자원이 확인된 병원을 미확인 병원보다 항상 앞에 둔다
@@ -1277,13 +1331,18 @@ module.exports = { Service: Service };
     semigran: { t: 'Semigran HL et al. 온라인 증상 확인 도구의 분류 정확도 57%, 응급 사례 80% (BMJ 2015)', u: 'https://doi.org/10.1136/bmj.h3480' },
     crb65: { t: 'NICE NG250 성인 폐렴: CRB65 (혼란·호흡수 30 이상·저혈압·65세 이상) 0점 저위험, 2점 이상 병원 의뢰', u: 'https://www.nice.org.uk/guidance/ng250/chapter/Recommendations' },
     cds: { t: 'Friedman JN et al. 임상 탈수 척도(CDS): 모습·눈·입안·눈물, 0점 탈수 없음 · 1~4 가벼움 · 5~8 중등도 이상 (J Pediatr 2004)', u: 'https://fpnotebook.com/ER/Exam/ClnclDhydrtnScl.htm' },
+    easylaw: { t: '찾기 쉬운 생활법령정보: 응급의료기관의 종류 (응급의료법 제25~31조, 제30조의2·3)', u: 'https://www.easylaw.go.kr' },
+    peds_center: { t: '보건복지부: 소아전문응급의료센터 현황 (전국 14곳, 2026.5 신규 지정 포함)', u: 'https://www.mohw.go.kr' },
+    copay90: { t: '2024.9.13부터 경증(KTAS 4~5) 환자가 권역·전문·권역외상센터 응급실 이용 시 본인부담 90% (머니투데이)', u: 'https://www.mt.co.kr/thebio/2024/09/13/2024091310054833855' },
+    dalbit: { t: '국립중앙의료원: 달빛어린이병원 (야간·휴일 소아 경증 진료, 18세 이하)', u: 'https://www.nmc.or.kr/nmc/babyList' },
+    news2: { t: 'Royal College of Physicians. NEWS2 (2017): 호흡수·산소포화도·혈압·맥박·의식·체온 점수, 5점 이상 긴급 · 7점 이상 응급 대응', u: 'https://www.nwas.nhs.uk/publications/news2-national-early-warning-score' },
     kr_golden: { t: '중증응급환자 적정 시간 내 최종치료기관 도착률 51.7% (2020, 보건복지부 응급의료 기본계획 분석)', u: 'https://newstomato.com/ReadNews.aspx?no=1157762' }
   };
 
   function num(v) { if (v == null || v === '') return null; var n = Number(v); return isFinite(n) ? n : null; }
   function dedupe(a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); }
 
-  return { PUBLIC: PUBLIC, CONDITIONS: CONDITIONS, REFS: REFS, RES: R, fieldTriage: fieldTriage, race: race, refGrade: refGrade, needsFor: needsFor, match: match, preNotify: preNotify, haversine: haversine, etaMin: etaMin, parseTime: parseTime, conditionLabel: conditionLabel };
+  return { kind: kind, pedsCenter: pedsCenter, PEDS_CENTERS: PEDS_CENTERS, PUBLIC: PUBLIC, CONDITIONS: CONDITIONS, REFS: REFS, RES: R, fieldTriage: fieldTriage, race: race, refGrade: refGrade, needsFor: needsFor, match: match, preNotify: preNotify, haversine: haversine, etaMin: etaMin, parseTime: parseTime, conditionLabel: conditionLabel };
 });
 
 </script>
@@ -1768,7 +1827,11 @@ module.exports = { Service: Service };
 
   // 결과 계산
   function assess(ctx, key, has, fields) {
-    ctx = ctx || {}; has = has || {}; fields = fields || {};
+    ctx = ctx || {}; has = has || {}; fields = Object.assign({}, fields || {});
+    var v = ctx.v || {};
+    // 직접 잰 값은 증상별 도구(폐렴 호흡수·발열 체온·혈압)에도 그대로 쓴다
+    if (fields.rr == null && v.rr != null) fields.rr = v.rr; if (fields.temp == null && v.temp != null) fields.temp = v.temp;
+    if (fields.bp_s == null && v.sbp != null) fields.bp_s = v.sbp; if (fields.bp_d == null && v.dbp != null) fields.bp_d = v.dbp;
     var c = C[key] || null, reasons = [], refs = [];
     var lv = c ? c.base : 3, lvLocked = null;
     var p = { condition: c ? c.cond : 'other', age: ctx.age, extraNeeds: [], aid: c ? c.aid || null : null };
@@ -1798,19 +1861,92 @@ module.exports = { Service: Service };
       (c.refs || []).forEach(function (r) { if (refs.indexOf(r) < 0) refs.push(r); });
     }
     if (lvLocked != null && !gateHit) lv = lvLocked;
+    var vit = vitals(ctx, v, hit); // 직접 잰 값은 증상 판단보다 더 위급하면 그대로 반영된다
     if (c && !reasons.length) reasons.push({ lv: c.base, t: c.baseWhy, ref: (c.refs || [])[0] || null, base: true });
     if (!c && !gateHit) return null;
 
     // 경고 증상 안내: 체크하지 않은 더 위급한 항목 (오늘 진료·응급실일 때 '이런 증상이 생기면' 목록)
     var watch = lv > 1 ? items.filter(function (it) { return it.type !== 'grade' && !has[it.id] && it.lv < lv; }).map(function (it) { return { t: it.t.replace(/^\([^)]*\)\s*/, ''), lv: it.lv }; }) : [];
     p.ageMonthsBand = ctx.infant || null;
+    var tr = tierPlan(lv, p, ctx);
+    tr.needs.forEach(function (n) { p.extraNeeds.push(n); });
+    if (tr.ref && refs.indexOf(tr.ref) < 0) refs.push(tr.ref);
     return {
+      tier: tr, vitals: vit,
       level: lv, levelInfo: LEVEL[lv], complaint: key, title: c ? c.title : '생명이 위급한 상태',
       condition: p.condition, aid: p.aid, reasons: reasons.sort(function (a, b) { return a.lv - b.lv; }),
       refs: refs, watch: watch.slice(0, 6), tips: p.tips || [], home: lv === 3 && c && c.home ? c.home : [],
       say: say, timeCritical: lv === 1 || (lv === 2 && ['sepsis', 'gyn', 'gi_bleed', 'head', 'headache', 'anaphylaxis'].indexOf(p.condition) >= 0),
       p: p
     };
+  }
+
+  /* ── 직접 측정한 활력징후 판정 ──
+   * 성인: NEWS2 (RCP 2017). 잰 항목만 점수화. 합계 7 이상 → 119, 5~6 또는 한 항목 3점 → 지금 응급실, 1~4 → 오늘 진료.
+   * 어린이(16세 미만): NICE 발열 신호등의 나이별 호흡·맥박 기준, 모세혈관 재충전 3초 이상, 산소포화도 95% 이하.
+   */
+  function band(x, rules) { for (var i = 0; i < rules.length; i++) if (rules[i][0](x)) return rules[i][1]; return 0; }
+  function vitals(ctx, v, hit) {
+    var age = ctx.age, out = { score: null, items: [], n: 0, lv: null, max: 0 };
+    var keys = ['rr', 'spo2', 'sbp', 'hr', 'avpu', 'temp', 'crt'].filter(function (k) { return v[k] != null && v[k] !== ''; });
+    if (!keys.length && v.pain == null) return out;
+    if (age == null || age >= 16) {
+      var pts = {}, tot = 0, three = [];
+      if (v.rr != null) pts.rr = band(+v.rr, [[function (x) { return x <= 8 || x >= 25; }, 3], [function (x) { return x >= 21; }, 2], [function (x) { return x <= 11; }, 1]]);
+      if (v.spo2 != null) pts.spo2 = band(+v.spo2, [[function (x) { return x <= 91; }, 3], [function (x) { return x <= 93; }, 2], [function (x) { return x <= 95; }, 1]]);
+      if (v.sbp != null) pts.sbp = band(+v.sbp, [[function (x) { return x <= 90 || x >= 220; }, 3], [function (x) { return x <= 100; }, 2], [function (x) { return x <= 110; }, 1]]);
+      if (v.hr != null) pts.hr = band(+v.hr, [[function (x) { return x <= 40 || x >= 131; }, 3], [function (x) { return x >= 111; }, 2], [function (x) { return x <= 50 || x >= 91; }, 1]]);
+      if (v.avpu != null) pts.avpu = v.avpu === 'A' ? 0 : 3;
+      if (v.temp != null) pts.temp = band(+v.temp, [[function (x) { return x <= 35; }, 3], [function (x) { return x >= 39.1; }, 2], [function (x) { return x <= 36 || x >= 38.1; }, 1]]);
+      var NAME = { rr: '호흡수', spo2: '산소포화도', sbp: '수축기 혈압', hr: '맥박', avpu: '의식', temp: '체온' };
+      Object.keys(pts).forEach(function (k) { tot += pts[k]; if (pts[k] === 3) three.push(NAME[k]); });
+      out.score = tot; out.n = Object.keys(pts).length; out.items = pts;
+      var tag = 'NEWS2 ' + tot + '점 (잰 ' + out.n + '개 항목 기준)';
+      if (tot >= 7) { out.lv = 1; hit(1, tag + ': 응급 대응이 필요한 수준', 'news2'); }
+      else if (tot >= 5 || three.length) { out.lv = 2; hit(2, tag + (three.length ? ' · 위험 수준 항목: ' + three.join(', ') : '') + ': 긴급 평가 필요', 'news2'); }
+      else if (tot >= 1) { out.lv = 3; hit(3, tag + ': 진료 필요', 'news2'); }
+      else if (out.n) hit(3, tag + ': 잰 값은 정상 범위', 'news2');
+    } else {
+      var amb = [], red = [], m = ctx.infant, yrs = age;
+      var hrLim = m === 'lt3' || m === '3to6' || m === '6to12' || yrs < 1 ? 160 : yrs < 2 ? 150 : yrs <= 5 ? 140 : null;
+      var rrAmb = m || yrs < 1 ? 50 : 40;
+      if (v.rr != null) { if (+v.rr > 60) red.push('호흡수 ' + v.rr + '회 (60 초과)'); else if (+v.rr > rrAmb) amb.push('호흡수 ' + v.rr + '회 (' + rrAmb + ' 초과)'); }
+      if (v.hr != null && hrLim && +v.hr > hrLim) amb.push('맥박 ' + v.hr + '회 (' + hrLim + ' 초과)');
+      if (v.crt != null && +v.crt >= 3) amb.push('모세혈관 재충전 ' + v.crt + '초 (3초 이상)');
+      if (v.spo2 != null) { if (+v.spo2 < 90) red.push('산소포화도 ' + v.spo2 + '%'); else if (+v.spo2 <= 95) amb.push('산소포화도 ' + v.spo2 + '% (95% 이하)'); }
+      if (v.avpu != null && v.avpu !== 'A') red.push('의식 저하');
+      if (red.length) { out.lv = 1; hit(1, '아이 활력징후 고위험: ' + red.join(', '), 'nice_fever'); }
+      else if (amb.length >= 2) { out.lv = 2; hit(2, '아이 활력징후 주의 소견 ' + amb.length + '개: ' + amb.join(', '), 'nice_fever'); }
+      else if (amb.length) { out.lv = 3; hit(3, '아이 활력징후 주의 소견: ' + amb[0], 'nice_fever'); }
+      out.items = { red: red, amber: amb };
+    }
+    if (v.pain != null && +v.pain >= 7) hit(3, '통증 ' + v.pain + '/10: 심한 통증은 진료가 필요합니다', 'aha_fa');
+    out.max = out.lv || 0;
+    return out;
+  }
+
+  /* ── 중증도 → 갈 의료기관 등급 (응급의료법상 응급의료기관 종류) ──
+   * 1 지금 119: 권역응급의료센터 (중증응급환자 중심, 제26조) · 외상 Red/Yellow는 권역외상센터 · 소아는 소아전문응급의료센터
+   * 2 지금 응급실: 응급의료센터 (권역·지역)
+   * 3 오늘 진료: 지역응급의료기관 또는 문 연 병·의원, 소아는 달빛어린이병원. 권역센터는 경증 본인부담 90%라 피한다
+   */
+  var SPECIAL = { burn: '화상 전문 진료가 가능한 곳 (중증화상 전문치료 가능 표시)', poison: '독극물 중독 진료 가능한 응급의료센터', trauma: '권역외상센터' };
+  function tierPlan(lv, p, ctx) {
+    var kid = ctx.age != null && ctx.age < 18, ft = p.fieldTriage || {}, needs = [], t;
+    if (lv === 1) {
+      if (p.condition === 'trauma' && (ft.level === 'red' || ft.level === 'yellow')) t = { key: 'trauma', title: '권역외상센터', desc: '중증 외상은 외상 전담 수술팀이 24시간 대기하는 권역외상센터가 우선입니다 (응급의료법 제30조의2).' };
+      else { t = { key: 'regional', title: '권역응급의료센터', desc: '생명이 위급한 중증응급환자를 중심으로 진료하도록 지정된 곳입니다 (응급의료법 제26조). 가까운 곳에 필요한 치료가 가능하면 지역응급의료센터도 괜찮습니다.' }; needs.push({ key: 'tierRegional', level: 'pref', why: '중증응급환자 중심 진료 (응급의료법 제26조)' }); }
+    } else if (lv === 2) {
+      t = { key: 'center', title: '응급의료센터 (권역·지역)', desc: '검사·처치가 바로 필요한 상태입니다. 지역응급의료센터 이상의 응급실이 적합합니다 (응급의료법 제30조).' };
+      needs.push({ key: 'tierCenter', level: 'pref', why: '지역응급의료센터 이상' });
+    } else {
+      t = { key: 'local', title: kid ? '달빛어린이병원 · 지역응급의료기관' : '지역응급의료기관 · 문 연 병·의원', mild: true, desc: (kid ? '야간·휴일 소아 경증은 달빛어린이병원에서 진료받을 수 있습니다. ' : '') + '경증으로 권역응급의료센터를 이용하면 진료비 본인부담이 90%입니다 (2024.9~). 중증 환자를 위해 비워 두는 곳이기도 합니다.' };
+      needs.push({ key: 'tierLocal', level: 'pref', why: '경증: 지역응급의료기관·지역센터 (권역센터는 본인부담 90%)' });
+    }
+    if (kid && lv <= 2) { needs.push({ key: 'pedsCenter', level: 'pref', why: '소아 중증 응급: 소아전문응급의료센터 (응급의료법 제29조)' }); t.peds = true; }
+    t.special = SPECIAL[p.condition] && lv <= 2 && p.condition !== 'trauma' ? SPECIAL[p.condition] : null;
+    t.lv = lv; t.kid = kid; t.needs = needs; t.ref = lv === 3 ? 'copay90' : 'easylaw';
+    return t;
   }
 
   // 분과별 묶음 (한 증상이 여러 묶음에 나올 수 있음)
@@ -2351,7 +2487,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
   function hospitalCard(r, first, p, grade) {
     var h = r.h, call = h.erTel || h.tel;
     var html = '<article class="hosp' + (first ? ' first' : '') + '">' +
-      '<div class="hhead"><div>' + (first ? '<span class="tagline">추천</span>' : '') + '<h3>' + esc(h.name) + '</h3><div class="caption">' + esc([h.type, h.trauma ? '권역외상센터' : '', h.addr].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<div class="hhead"><div>' + (first ? '<span class="tagline">추천</span>' : '') + '<h3>' + esc(h.name) + '</h3><div class="caption">' + (h.type ? '<span class="kindtag">' + esc(h.type) + '</span>' : '') + (h.trauma ? '<span class="kindtag">권역외상센터</span>' : '') + (L.pedsCenter(h) ? '<span class="kindtag peds">소아전문응급의료센터</span>' : '') + esc(h.addr || '') + '</div></div>' +
       '<div class="eta">' + etaHtml(r) + '</div></div>' +
       '<div class="pills">' + (callSt(h.hpid) && callSt(h.hpid).st === 'yes' ? '<span class="pill ok">전화로 수용 확인됨</span>' : '') + crowdPill(r) + (r.walkOk && !critical ? '<span class="pill ok">걸어가도 비슷해요 · 도보 ' + r.foot.min + '분</span>' : '') + (r.stale ? '<span class="pill alt">' + (r.ageMin == null ? '갱신시각 없음' : r.ageMin + '분 전 정보') + '</span>' : '<span class="pill off">' + r.ageMin + '분 전 갱신</span>') + '</div>' +
       '<div class="cells">' + r.cells.map(cell).join('') + '</div>' + (h.mapimg ? '<div class="way">찾아가는 길: ' + esc(h.mapimg) + '</div>' : '');
@@ -2439,12 +2575,12 @@ return { Router: Router, DEFAULTS: DEFAULTS };
   function triAssess() { var t = S.tri; return T.assess(t.ctx, t.key, t.has, t.f); }
   function go(step, qi) { var t = S.tri; t.hist.push([t.step, t.qi]); t.step = step; t.qi = qi || 0; renderTriage(); if (step === 'done') triUpdate(); else if (S.pub && S.pub.tri) { S.pub = null; renderPublic(); } var el = $('#tri'); if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' }); }
   function back() { var t = S.tri, h = t.hist.pop(); if (!h) return; t.step = h[0]; t.qi = h[1]; renderTriage(); if (S.pub && S.pub.tri) { S.pub = null; renderPublic(); } }
-  function nextQ() { var t = S.tri, qs = triQs(); if (t.qi + 1 < qs.length) go('q', t.qi + 1); else go('done'); }
+  function nextQ() { var t = S.tri, qs = triQs(); if (t.qi + 1 < qs.length) go('q', t.qi + 1); else go('measure'); }
   function seg(attr, val, cur, text) { return '<button type="button" class="pill-btn" ' + attr + '="' + val + '" aria-pressed="' + (String(cur) === String(val)) + '">' + text + '</button>'; }
   function progress() {
-    var t = S.tri, qs = triQs(), pct = { who: 8, gate: 22, cc: 36, done: 100 }[t.step];
+    var t = S.tri, qs = triQs(), pct = { who: 8, gate: 22, cc: 36, measure: 94, done: 100 }[t.step];
     if (t.step === 'q') pct = 40 + Math.round(55 * (t.qi + 1) / Math.max(1, qs.length));
-    var label = { who: '환자 정보', gate: '위급 신호', cc: '증상 고르기', done: '결과' }[t.step] || ('질문 ' + (t.qi + 1) + ' / ' + qs.length);
+    var label = { who: '환자 정보', gate: '위급 신호', cc: '증상 고르기', measure: '직접 재기', done: '결과' }[t.step] || ('질문 ' + (t.qi + 1) + ' / ' + qs.length);
     return '<div class="wz-top">' + (t.hist.length && t.step !== 'done' ? '<button type="button" class="wz-back" data-wz="back" aria-label="이전">‹</button>' : '<span class="wz-back ph"></span>') +
       '<div class="wz-bar"><i style="width:' + pct + '%"></i></div><span class="wz-lbl">' + label + '</span></div>';
   }
@@ -2495,12 +2631,15 @@ return { Router: Router, DEFAULTS: DEFAULTS };
       }
       if (r && r.level === 1) h += '<button type="button" class="wz-urgent" data-wz="done">지금 119가 필요한 상태입니다 · 바로 결과 보기 ›</button>';
       else h += '<button type="button" class="linkbtn wz-skip" data-wz="done">남은 질문 건너뛰고 결과 보기</button>';
+    } else if (t.step === 'measure') {
+      h += '<h2 class="wz-q">직접 재 볼 수 있는 것</h2><p class="caption">잴 수 있는 것만 재세요. 잰 값은 판단에 바로 반영됩니다 (성인 NEWS2 · 어린이 NICE 기준). 손이 모자라면 건너뛰어도 됩니다.</p>' + measureTools() +
+        '<button type="button" class="cta wz-next" data-wz="done">결과 보기</button>';
     } else if (t.step === 'done') {
       var r2 = triAssess(), yes = Object.keys(t.ans).filter(function (k) { return t.ans[k] === 'y'; });
       var all = (t.key ? T.COMPLAINTS[t.key].items : []).concat(T.GATE);
       h += '<div class="wz-sum"><div><b>' + (t.ctx.age != null ? t.ctx.age + '세 ' : '') + ({ F: '여성', M: '남성' }[t.ctx.sex] || '') + '</b> · ' + esc(t.key ? T.COMPLAINTS[t.key].title : '위급 신호') + '</div>' +
         (yes.length ? '<div class="wz-chips">' + yes.map(function (k) { var it = all.filter(function (x) { return x.id === k; })[0]; return it ? '<span class="chipy">' + esc(it.t.replace(/^\([^)]*\)\s*/, '').slice(0, 26)) + '</span>' : ''; }).join('') + '</div>' : '') +
-        '<div class="wz-yn">' + (t.key ? '<button type="button" class="ghost" data-wz="edit">답 고치기</button>' : '<button type="button" class="ghost" data-wz="cc">증상 문진 이어서 하기</button>') + '<button type="button" class="ghost" data-wz="reset">처음부터</button></div>' +
+        vitalChips() + '<div class="wz-yn">' + '<button type="button" class="ghost" data-wz="measure">' + (Object.keys(t.ctx.v || {}).length ? '측정값 고치기' : '맥박·호흡 등 직접 재기') + '</button>' + (t.key ? '<button type="button" class="ghost" data-wz="edit">답 고치기</button>' : '<button type="button" class="ghost" data-wz="cc">증상 문진 이어서 하기</button>') + '<button type="button" class="ghost" data-wz="reset">처음부터</button></div>' +
         (r2 ? '<p class="caption">결과: <b>' + esc(r2.levelInfo.title) + '</b> ↓</p>' : '') + '</div>';
     }
     el.innerHTML = h + '</div>';
@@ -2522,8 +2661,69 @@ return { Router: Router, DEFAULTS: DEFAULTS };
       var left = Math.max(0, Math.ceil((end - Date.now()) / 1000)), lt = $('#b-t');
       if (!lt) return clearInterval(BT);
       lt.textContent = left + '초';
-      if (left <= 0) { clearInterval(BT); tap.disabled = true; S.tri.f.rr = n * 2; lt.textContent = '→ 1분 ' + n * 2 + '회'; var inp = $('[data-fv=rr]'); if (inp) inp.value = n * 2; }
+      if (left <= 0) { clearInterval(BT); tap.disabled = true; S.tri.f.rr = n * 2; S.tri.ctx.v = S.tri.ctx.v || {}; S.tri.ctx.v.rr = n * 2; lt.textContent = '→ 1분 ' + n * 2 + '회'; var inp = $('[data-fv=rr]'); if (inp) inp.value = n * 2; }
     }, 200);
+  }
+  /* ── 직접 측정 도구 ── */
+  var VT = {
+    rr: { t: '호흡수', unit: '회/분', how: '가슴(아기는 배)이 올라오는 것을 30초 세면 2배로 계산합니다.', secs: 30, mult: 2 },
+    hr: { t: '맥박', unit: '회/분', how: '손목 엄지 쪽(아기는 위팔 안쪽)에 두 손가락을 대고 15초 세면 4배로 계산합니다. 스마트워치 값도 됩니다.', secs: 15, mult: 4 },
+    crt: { t: '모세혈관 재충전', unit: '초', how: '손톱(아기는 가슴 피부)을 5초 꾹 누른 뒤 떼면서 ‘시작’, 분홍색이 돌아오면 ‘멈춤’. 3초 이상이면 혈액순환 저하 신호입니다.', watch: true },
+    spo2: { t: '산소포화도', unit: '%', how: '손가락 산소측정기가 있으면 값을 넣으세요.' },
+    temp: { t: '체온', unit: '℃', how: '귀·이마 체온계 값.' },
+    sbp: { t: '혈압', unit: 'mmHg', how: '가정용 혈압계의 위(수축기)·아래(이완기) 숫자.', bp: true },
+    avpu: { t: '의식', how: '말을 걸고 반응을 봅니다.', opts: [['A', '깨어 있고 또렷하다'], ['C', '새로 생긴 혼란·엉뚱한 말'], ['V', '불러야 반응한다'], ['P', '꼬집어야 반응한다'], ['U', '반응이 없다']] },
+    pain: { t: '통증', how: '0 안 아픔 · 5 꽤 아픔 · 10 상상할 수 있는 가장 심한 통증', scale: true }
+  };
+  function vitalHint(k) {
+    var v = (S.tri.ctx.v || {})[k]; if (v == null || v === '') return '';
+    var a = S.tri.ctx.age, kid = a != null && a < 16, bad;
+    if (k === 'crt') bad = +v >= 3; else if (k === 'spo2') bad = +v <= (kid ? 95 : 93); else if (k === 'avpu') bad = v !== 'A'; else if (k === 'pain') bad = +v >= 7;
+    else if (k === 'rr') bad = kid ? +v > 40 : (+v <= 11 || +v >= 21); else if (k === 'hr') bad = kid ? +v > 140 : (+v <= 50 || +v >= 111); else if (k === 'temp') bad = +v <= 36 || +v >= 38.1; else if (k === 'sbp') bad = +v <= 100 || +v >= 220;
+    return bad ? '<span class="hint-bad">주의 범위입니다</span>' : '<span class="hint-ok">괜찮은 범위입니다</span>';
+  }
+  function measureTools() {
+    var v = S.tri.ctx.v || {}, kid = S.tri.ctx.age != null && S.tri.ctx.age < 16;
+    var order = kid ? ['rr', 'hr', 'crt', 'temp', 'spo2', 'avpu', 'pain'] : ['rr', 'hr', 'spo2', 'sbp', 'temp', 'avpu', 'pain', 'crt'];
+    return '<div class="tools">' + order.map(function (k) {
+      var d = VT[k], val = v[k], body = '';
+      if (d.opts) body = '<div class="wz-chips">' + d.opts.map(function (o) { return '<button type="button" class="pill-btn" data-tool="pick" data-k="avpu" data-val="' + o[0] + '" aria-pressed="' + (val === o[0]) + '">' + esc(o[1]) + '</button>'; }).join('') + '</div>';
+      else if (d.scale) body = '<div class="painrow">' + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (n) { return '<button type="button" class="pn" data-tool="pick" data-k="pain" data-val="' + n + '" aria-pressed="' + (val === n) + '">' + n + '</button>'; }).join('') + '</div>';
+      else {
+        if (d.secs) body += '<div class="counter" data-k="' + k + '"><button type="button" class="ghost" data-tool="count" data-k="' + k + '">' + d.secs + '초 세기 시작</button><button type="button" class="tapbtn" data-tool="tap" data-k="' + k + '" disabled><b>0</b><span>누를 때마다 1회</span></button></div>';
+        if (d.watch) body += '<div class="counter"><button type="button" class="tapbtn wide" data-tool="watch" data-k="crt"><b>시작</b><span>손을 뗄 때 누르기</span></button></div>';
+        body += d.bp ? '<div class="wz-bp"><label>수축기<input type="number" inputmode="numeric" data-vv="sbp" value="' + esc(v.sbp == null ? '' : v.sbp) + '"></label><label>이완기<input type="number" inputmode="numeric" data-vv="dbp" value="' + esc(v.dbp == null ? '' : v.dbp) + '"></label></div>'
+          : '<label class="vin">' + esc(d.unit) + '<input type="number" step="' + (k === 'temp' || k === 'crt' ? '0.1' : '1') + '" inputmode="decimal" data-vv="' + k + '" value="' + esc(val == null ? '' : val) + '"></label>';
+      }
+      return '<details class="tool"' + (val != null ? ' open' : '') + '><summary><b>' + d.t + '</b>' + (val != null ? ' <span class="vval">' + esc(String(val)) + (d.unit && !d.opts ? ' ' + d.unit : '') + '</span>' : '') + '</summary><p class="caption">' + esc(d.how) + '</p>' + body + '<div class="hint">' + vitalHint(k) + '</div></details>';
+    }).join('') + '</div>';
+  }
+  var TOOLT = null;
+  function setVital(k, val) { S.tri.ctx.v = S.tri.ctx.v || {}; S.tri.ctx.v[k] = val; }
+  function toolClick(b) {
+    var k = b.dataset.k, d = VT[k], tool = b.closest('.tool');
+    if (b.dataset.tool === 'pick') { setVital(k, k === 'pain' ? +b.dataset.val : b.dataset.val); return renderTriage(); }
+    if (b.dataset.tool === 'count') {
+      var tap = tool.querySelector('[data-tool=tap]'), n = 0, end = Date.now() + d.secs * 1000;
+      tap.disabled = false; b.disabled = true; tap.querySelector('b').textContent = '0';
+      tap.onclick = function () { n++; tap.querySelector('b').textContent = n; };
+      clearInterval(TOOLT);
+      TOOLT = setInterval(function () {
+        var left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+        b.textContent = left + '초 남음';
+        if (left <= 0) { clearInterval(TOOLT); tap.disabled = true; setVital(k, n * d.mult); renderTriage(); }
+      }, 200);
+      return;
+    }
+    if (b.dataset.tool === 'watch') {
+      if (!b.dataset.t0) { b.dataset.t0 = Date.now(); b.querySelector('b').textContent = '멈춤'; b.querySelector('span').textContent = '분홍색이 돌아오면 누르기'; return; }
+      var sec = Math.round((Date.now() - +b.dataset.t0) / 100) / 10; setVital('crt', sec); return renderTriage();
+    }
+  }
+  function vitalChips() {
+    var v = S.tri.ctx.v || {}, keys = Object.keys(v); if (!keys.length) return '';
+    var NM = { rr: '호흡', hr: '맥박', crt: 'CRT', spo2: 'SpO2', temp: '체온', sbp: '혈압', dbp: '', avpu: '의식', pain: '통증' };
+    return '<div class="wz-chips">' + keys.filter(function (k) { return k !== 'dbp'; }).map(function (k) { return '<span class="chipy">' + NM[k] + ' ' + esc(k === 'sbp' && v.dbp != null ? v.sbp + '/' + v.dbp : String(v[k])) + '</span>'; }).join('') + '</div>';
   }
   function bindTriage() {
     var el = $('#tri'); if (!el) return;
@@ -2531,6 +2731,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
       var x = e.target, t = S.tri;
       if (x.dataset.c) { var v = x.value === '' ? null : +x.value; t.ctx[x.dataset.c] = v; if (x.dataset.c === 'age') { if (v !== 0) delete t.ctx.infant; renderTriage(); } }
       if (x.dataset.fv) t.f[x.dataset.fv] = x.value;
+      if (x.dataset.vv) { t.ctx.v = t.ctx.v || {}; if (x.value === '') delete t.ctx.v[x.dataset.vv]; else t.ctx.v[x.dataset.vv] = +x.value; var hn = x.closest('.tool'); if (hn) { var hh = hn.querySelector('.hint'); if (hh) hh.innerHTML = vitalHint(x.dataset.vv); } }
     });
     el.addEventListener('click', function (e) {
       var t = S.tri, b = e.target.closest('button'); if (!b) return;
@@ -2545,9 +2746,10 @@ return { Router: Router, DEFAULTS: DEFAULTS };
       if (b.dataset.grade != null && q) { t.f[q.it.id] = +b.dataset.grade; return nextQ(); }
       if (b.dataset.fopt && q) { t.f[q.fd.id] = b.dataset.fopt; return nextQ(); }
       if (b.id === 'b-go') return breathStart();
+      if (b.dataset.tool) return toolClick(b);
       var w = b.dataset.wz; if (!w) return;
       if (w === 'back') return back();
-      if (w === 'gate' || w === 'cc') return go(w);
+      if (w === 'gate' || w === 'cc' || w === 'measure') return go(w);
       if (w === 'nextq') { $$('[data-fv]', el).forEach(function (i) { if (i.value !== '') t.f[i.dataset.fv] = i.value; }); return nextQ(); }
       if (w === 'done') { $$('[data-fv]', el).forEach(function (i) { if (i.value !== '') t.f[i.dataset.fv] = i.value; }); return go('done'); }
       if (w === 'edit') return go('q', 0);
@@ -2555,13 +2757,56 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     });
     renderTriage();
   }
+  /* ── 갈 곳 등급 (응급의료기관 종류) ── */
+  function tierHtml(r) {
+    var t = r.tier; if (!t) return '';
+    var rows = [
+      ['regional', '권역응급의료센터', '중증응급환자 중심 (제26조)'],
+      ['center', '지역응급의료센터', '응급환자 진료 (제30조)'],
+      ['local', '지역응급의료기관', '시·군·구 지정 응급실 (제31조)'],
+      ['clinic', t.kid ? '달빛어린이병원 · 동네 소아과' : '문 연 병·의원', '응급실이 아닌 진료']
+    ];
+    var on = { regional: ['regional'], trauma: [], center: ['center', 'regional'], local: ['local', 'clinic'] }[t.key] || [];
+    var h = '<div class="tier"><h3>이 상태에 맞는 곳: ' + esc(t.title) + '</h3><p class="caption" style="margin:0">' + esc(t.desc) + '</p><ul class="ladder">';
+    if (t.key === 'trauma') h += '<li class="on"><i></i><span>권역외상센터<small>중증 외상 전담 (제30조의2)</small></span></li>';
+    if (t.peds) h += '<li class="on"><i></i><span>소아전문응급의료센터<small>소아 중증 응급 전담, 전국 14곳 (제29조)</small></span></li>';
+    h += rows.map(function (x) { return '<li class="' + (on.indexOf(x[0]) >= 0 ? 'on' : '') + '"><i></i><span>' + esc(x[1]) + '<small>' + esc(x[2]) + '</small></span></li>'; }).join('') + '</ul>';
+    if (t.special) h += '<p class="caption">특히 ' + esc(t.special) + '을 우선합니다.</p>';
+    return h + '</div>';
+  }
+  // 달빛어린이병원: 야간·휴일 소아 경증 (18세 이하). 국립중앙의료원 목록에서 확인한 서울 12곳 + 전국은 공식 목록 연결
+  var DALBIT = [
+    ['24시열린의원 (목동)', '양천구', '목동동로 233-1, 109호', '02-2644-2475'], ['24시열린의원 (자양)', '광진구', '능동로 90, 3층', '02-455-2475'],
+    ['24시열린의원 (상암)', '마포구', '월드컵북로 396, 지하 B1095호', '02-2132-2475'], ['24시열린의원 (잠실)', '송파구', '백제고분로 187, 2층', '02-415-2475'],
+    ['365다움의원', '성동구', '왕십리광장로 17, 왕십리민자역사 4층', '02-2297-1755'], ['365온(ON)가정의원', '중구', '왕십리로 407, B1층', '02-6212-0365'],
+    ['강서푸른꿈성모어린이병원', '강서구', '공항대로41길 34', '02-3665-0823'], ['기쁨병원', '서초구', '서초중앙로 4', '02-570-1234'],
+    ['더건강한365의원', '양천구', '신월로 280', '02-2603-3650'], ['미즈아이프라자산부인과의원', '노원구', '동일로 1669, 수락프라자', '02-931-5224'],
+    ['서울삼육오의원', '영등포구', '영중로 119, 2층', '02-2069-3650'], ['성북우리아이들병원', '성북구', '동소문로46길 10', '02-912-0100']
+  ].map(function (x) { return { name: x[0], gu: x[1], addr: '서울특별시 ' + x[1] + ' ' + x[2], tel: x[3] }; });
+  function dalbitOpen(d) {
+    // 제도 안내 기준: 평일 23~24시까지, 주말·공휴일 18시까지 (기관마다 다름)
+    d = d || new Date(); var day = d.getDay(), hr = d.getHours() + d.getMinutes() / 60, wk = day >= 1 && day <= 5;
+    if (wk) return hr < 23 ? 'open' : 'maybe';
+    return hr < 18 ? 'open' : 'closed';
+  }
+  function dalbitCard() {
+    var rg = hnrRegion(), seoul = /서울/.test(rg.sido), st = dalbitOpen();
+    var list = seoul ? DALBIT.slice().sort(function (a, b) { return (b.gu === rg.sigungu) - (a.gu === rg.sigungu); }).slice(0, 4) : [];
+    var h = '<div class="card dalbit"><div class="cap">응급실 대신: 달빛어린이병원</div>' +
+      '<p class="caption" style="color:var(--ink)">밤·주말에 아이(18세 이하)의 가벼운 증상을 소아청소년과 의사가 진료하는 곳입니다. 응급실보다 기다림과 진료비가 적습니다. ' +
+      (st === 'open' ? '<b>지금은 대부분 진료 중인 시간입니다.</b>' : st === 'maybe' ? '<b>밤 11시가 넘어 문을 닫았을 수 있습니다.</b> 전화로 확인하세요.' : '<b>주말·공휴일은 보통 오후 6시까지라 지금은 닫았을 수 있습니다.</b> 지역응급의료기관을 이용하세요.') + '</p>';
+    if (list.length) h += '<ul class="dal-list">' + list.map(function (x) { return '<li><b>' + esc(x.name) + '</b><span class="meta">' + esc(x.addr) + '</span><a class="ghost" href="tel:' + tel(x.tel) + '">전화</a></li>'; }).join('') + '</ul>';
+    h += '<div class="actions"><a class="ghost" target="_blank" rel="noopener" href="https://www.nmc.or.kr/nmc/babyList">전국 달빛어린이병원 목록</a><a class="ghost" target="_blank" rel="noopener" href="' + (S.origin ? 'https://map.kakao.com/link/search/' + encodeURIComponent('달빛어린이병원') : 'https://map.kakao.com/link/search/' + encodeURIComponent(rg.sido + ' ' + rg.sigungu + ' 달빛어린이병원')) + '">지도에서 찾기</a></div>' +
+      '<p class="caption">' + (seoul ? '서울 목록은 국립중앙의료원 자료를 옮긴 것입니다. ' : '') + '임시 휴진이 있을 수 있으니 출발 전 전화로 확인하세요.</p></div>';
+    return h;
+  }
   function refLink(k) { var r = k && L.REFS[k]; return r ? ' <a target="_blank" rel="noopener" href="' + esc(r.u) + '" title="' + esc(r.t) + '">근거</a>' : ''; }
   function renderTriResult() {
     var r = S.pub.tri, out = $('#pub-out'), lv = r.level, aid = r.aid && L.PUBLIC[r.aid];
     var html = '<div class="card tri-res lv' + lv + ' ' + (lv === 1 ? 'alarm' : 'go') + '"><div class="decide"><div><div class="big">' + esc(r.levelInfo.title) + '</div><p>' + esc(LV_TXT[lv]) + '</p></div>' + (lv === 1 ? '<a class="call" href="tel:119">119</a>' : '') + '</div>';
     html += '<div class="label">이렇게 판단한 이유 · 의심 질환군: ' + esc(L.conditionLabel(r.condition)) + '</div><ul class="why">' + r.reasons.map(function (x) {
       return '<li><span class="lvtag l' + x.lv + '">' + LV_TAG[x.lv] + '</span><span>' + esc(x.t) + refLink(x.ref) + '</span></li>';
-    }).join('') + '</ul>';
+    }).join('') + '</ul>' + tierHtml(r);
     var steps = r.tips.concat(aid ? aid.steps : []);
     if (steps.length) html += '<div class="label">지금 할 일</div><ol class="steps">' + steps.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>';
     if (r.home.length) html += '<div class="label">진료 전까지</div><ul class="steps">' + r.home.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
@@ -2574,10 +2819,11 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     if (aedMode === 'arrest') html += aedCard('arrest');
     if (lv === 1) html += call119Card({ title: r.say });
     if (aedMode === 'standby') html += aedCard('standby');
+    if (lv === 3 && r.tier && r.tier.kid) html += dalbitCard();
     if (lv === 3) html += hnrCard();
     html += '<div class="sub">' + (lv === 1 ? '<div class="cap">참고: 이 상황을 받을 수 있는 근처 응급실</div><p class="caption">병원 선정은 구급대가 합니다. 아래는 보호자 참고용입니다.</p>' : lv === 2 ? '<div class="cap">지금 갈 수 있는 응급실</div><p class="caption">문진 결과에 필요한 장비·진료가 실시간으로 가능한 곳을 먼저 보여 줍니다.</p>' : '<div class="cap">응급실이 필요해지면 갈 곳</div>') + '</div><div id="pub-mapslot"></div><div id="pub-match"></div>';
     out.innerHTML = html; placeMap();
-    renderMatch($('#pub-match'), Object.assign({}, r.p), { timeCritical: r.timeCritical, compact: true });
+    renderMatch($('#pub-match'), Object.assign({}, r.p), { timeCritical: r.timeCritical, compact: true, mild: !!(r.tier && r.tier.mild) });
   }
 
   /* ── 일반인 ── */
