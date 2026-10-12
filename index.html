@@ -77,6 +77,16 @@ input, select { background: #fff; border: 1px solid var(--line2); border-radius:
 .tri-res.lv2 { border-top-color: #EA580C } .tri-res.lv2 .big { color: #C2410C }
 .tri-res.lv3 { border-top-color: var(--brand) }
 .watch li { color: var(--ink) }
+/* 자동심장충격기 */
+.aed { border-top: 6px solid var(--green) } .aed .cap { color: var(--green) }
+.aed-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px }
+.aed-list li { background: var(--green-tint); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center }
+.aed-list .d { font-family: var(--mono); font-weight: 800; font-size: 18px; text-align: right }
+.aed-list .d small { display: block; font-family: var(--font); font-size: 11.5px; font-weight: 700; color: var(--sub) }
+.aed-list .meta { grid-column: 1 / -1; font-size: 13px; color: var(--sub) }
+.aed-list .acts { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap }
+.aed-list .acts a { padding: 5px 10px; font-size: 13px }
+.mk.aedmk { background: var(--green); color: #fff; font-size: 13px }
 .chk input[type=checkbox] { width: auto; flex: none }
 .chk input { width: auto; margin: 0 }
 .age { flex-direction: row; align-items: center; gap: 8px; margin-top: 14px; font-size: 14px } .age input { width: 90px }
@@ -457,7 +467,23 @@ function merge(region) {
 // 주소에서 시도 · 시군구 추출 ("서울특별시 강남구 …" → ["서울특별시","강남구"])
 function regionOf(addr) { var p = String(addr || '').trim().split(/\s+/); return p.length >= 2 ? [p[0], p[1]] : null; }
 
-module.exports = { merge: merge, regionOf: regionOf, SEVERE: SEVERE, yn: yn, num: num };
+// 자동심장충격기 항목 → 화면 모델. 명세의 필드명(org·buildPlace·buildAddress·clerkTel 등)이 조회 기능마다 조금씩 달라 후보를 함께 본다.
+function aed(it) {
+  function pick() { for (var i = 0; i < arguments.length; i++) { var v = it[arguments[i]]; if (v != null && String(v).trim() !== '') return String(v).trim(); } return null; }
+  return {
+    id: pick('rnum', 'serialseq', 'aedseq') || null,
+    org: pick('org', 'orgnm', 'buildname', 'instlnm'),               // 설치기관명
+    place: pick('buildplace', 'instlplace', 'place'),               // 설치 위치 (예: 1층 로비)
+    addr: pick('buildaddress', 'addr', 'address', 'instladdr'),     // 설치 주소
+    tel: pick('clerktel', 'managertel', 'tel'),                     // 관리자 연락처
+    manager: pick('manager', 'clerk'),
+    model: pick('model', 'mfg'),
+    lat: num(pick('wgs84lat', 'lat', 'latitude')), lon: num(pick('wgs84lon', 'lon', 'longitude')),
+    km: num(pick('distance'))                                       // 위치 조회 응답의 거리(km)
+  };
+}
+
+module.exports = { merge: merge, regionOf: regionOf, SEVERE: SEVERE, yn: yn, num: num, aed: aed };
 
 };
 __mods["core"] = function (module, exports) {
@@ -476,10 +502,15 @@ var OPS = {
   traumaList: 'getStrmListInfoInqire',            // 외상센터 목록 (Q0, Q1)
   traumaNearby: 'getStrmLcinfoInqire',            // 외상센터 위치 (WGS84_LON, WGS84_LAT)
   traumaBasic: 'getStrmBassInfoInqire',           // 외상센터 기본정보
-  messages: 'getEmrrmSrsillDissMsgInqire'         // 응급실·중증질환 메시지 (HPID, Q0, Q1)
+  messages: 'getEmrrmSrsillDissMsgInqire',        // 응급실·중증질환 메시지 (HPID, Q0, Q1)
+  aedNearby: 'getAedLcinfoInqire',                // [AED 서비스] 자동심장충격기 위치 (WGS84_LON, WGS84_LAT)
+  aedRegion: 'getEgytAedManageInfoInqire'         // [AED 서비스] 시도·시군구별 관리정보 (Q0, Q1)
 };
+// 자동심장충격기(AED)는 별도 서비스(AEDInfoInqireService)라 주소가 다르다. 같은 인증키를 쓴다 (활용신청은 따로 필요).
+var BASE_AED = 'https://apis.data.go.kr/B552657/AEDInfoInqireService/';
+var AED_OPS = { aedNearby: 1, aedRegion: 1 };
 // 캐시 유효시간(ms): 실시간 항목은 짧게, 기관 정보는 길게
-var TTL = { beds: 120e3, severe: 300e3, messages: 120e3, list: 864e5, nearby: 864e5, basic: 864e5, traumaList: 864e5, traumaNearby: 864e5, traumaBasic: 864e5 };
+var TTL = { aedNearby: 36e5, aedRegion: 864e5, beds: 120e3, severe: 300e3, messages: 120e3, list: 864e5, nearby: 864e5, basic: 864e5, traumaList: 864e5, traumaNearby: 864e5, traumaBasic: 864e5 };
 
 function Client(opts) {
   this.key = String(opts.key || '').trim();
@@ -528,7 +559,7 @@ Client.prototype.call = async function (opName, params) {
     }
     this.count(op);
     try {
-      data = parseResponse(await this.fetchText(BASE + op + '?serviceKey=' + this.keyParam() + '&' + qs));
+      data = parseResponse(await this.fetchText((AED_OPS[opName] ? BASE_AED : BASE) + op + '?serviceKey=' + this.keyParam() + '&' + qs));
     } catch (e) {
       if (hit) return Object.assign({ cached: true, stale: true, fetchedAt: hit.at }, hit.data);
       return { ok: false, code: 'NETWORK', message: '공공데이터포털에 연결할 수 없습니다: ' + e.message };
@@ -554,7 +585,7 @@ function filterDemo(items, p, addrs) {
     return (!sido || addr.indexOf(sido) === 0) && (!gu || addr.indexOf(gu) >= 0);
   });
 }
-module.exports = { Client: Client, OPS: OPS, BASE: BASE };
+module.exports = { Client: Client, OPS: OPS, BASE: BASE, BASE_AED: BASE_AED };
 
 };
 __mods["service"] = function (module, exports) {
@@ -1633,8 +1664,16 @@ module.exports = { Service: Service };
     return {
       direct: true, // 자동 갱신 간격을 늘리는 데 쓴다 (브라우저별 호출 한도)
       region: function (s, g) { return svc.region(s, g).then(friendly); },
-      nearby: function (lat, lon) { return svc.nearby(lat, lon, 3).then(friendly); }
+      nearby: function (lat, lon) { return svc.nearby(lat, lon, 3).then(friendly); },
+      // 자동심장충격기: 위치 기준(가까운 순) · 지역 기준(위치를 모를 때)
+      aed: function (lat, lon) { return client.call('aedNearby', { WGS84_LON: (+lon).toFixed(5), WGS84_LAT: (+lat).toFixed(5), pageNo: 1, numOfRows: 10 }).then(aedOut); },
+      aedRegion: function (s, g) { return client.call('aedRegion', { Q0: s, Q1: g, pageNo: 1, numOfRows: 30 }).then(aedOut); }
     };
+    function aedOut(d) {
+      var N = require('./normalize');
+      if (!d.ok) return { ok: false, message: /SERVICE_KEY|등록되지 않은/.test(d.message || '') ? '자동심장충격기 정보조회 서비스의 활용신청(승인)이 필요합니다.' : d.message };
+      return { ok: true, items: (d.items || []).map(N.aed).filter(function (a) { return a.org || a.addr; }), fetchedAt: d.fetchedAt };
+    }
   }
 
   function usageText() {
@@ -1877,6 +1916,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
       LF.marker([h.lat, h.lon], { icon: icon, title: h.name, zIndexOffset: r && r.i === 0 ? 1000 : 0 }).bindPopup(pop).addTo(LAY);
       pts.push([h.lat, h.lon]);
     });
+    aedMarkers(LF);
     if (S.origin) { LF.circleMarker([S.origin.lat, S.origin.lon], { radius: 9, color: '#fff', weight: 3, fillColor: '#2563EB', fillOpacity: 1 }).bindTooltip('출발지').addTo(LAY); pts.push([S.origin.lat, S.origin.lon]); }
     var fk = okey(S.origin) + '|' + S.hospitals.length;
     if (pts.length && S.fitKey !== fk) { S.fitKey = fk; MAP.fitBounds(pts, { padding: [30, 30], maxZoom: 15 }); }
@@ -1976,6 +2016,67 @@ return { Router: Router, DEFAULTS: DEFAULTS };
 
   /* ── 119 신고 도우미 (연결 화면의 '119에 이렇게 말하세요') ── */
   var SAY = { arrest: '사람이 쓰러졌는데 반응이 없고 숨을 제대로 쉬지 않습니다.', stroke: '갑자기 한쪽 얼굴과 팔에 힘이 빠지고 말이 어눌해졌습니다.', chest: '가슴을 조이는 듯한 통증을 호소합니다.', allergy: '심한 알레르기 반응으로 숨쉬기 힘들어합니다.', trauma: '사고로 크게 다쳤습니다.', bleeding: '피가 많이 나고 멈추지 않습니다.', burn: '화상을 크게 입었습니다.', child_abd: '아이가 배를 심하게 아파합니다.', seizure: '경련을 하고 있습니다.', choking: '목에 무엇이 걸려 숨을 못 쉽니다.' };
+  /* ── 자동심장충격기(AED): 심정지 의심 때 가장 가까운 곳 ── */
+  S.aed = {}; S.aedOn = false;
+  var WALK = 80; // 보통 걸음 분당 약 80m (뛰면 더 빠름)
+  function aedKey() { if (S.origin) return 'g' + (+S.origin.lat).toFixed(4) + ',' + (+S.origin.lon).toFixed(4); var r = hnrRegion(); return 'r' + r.sido + ' ' + r.sigungu; }
+  function aedState() {
+    var src = source(), k = aedKey(), st = S.aed[k];
+    if (!src.aed) return { unsupported: true };
+    if (!st) {
+      st = S.aed[k] = { pending: true };
+      var rg = hnrRegion(), pr = S.origin ? src.aed(S.origin.lat, S.origin.lon) : src.aedRegion(rg.sido, rg.sigungu);
+      Promise.resolve(pr).then(function (d) {
+        var items = (d.items || []).filter(function (a) { return a.lat != null || a.addr; });
+        if (S.origin) items.forEach(function (a) { if (a.lat != null) a.m = Math.round(L.haversine(S.origin, a) * 1000); else if (a.km != null) a.m = Math.round(a.km * 1000); });
+        items.sort(function (a, b) { return (a.m == null ? 1e9 : a.m) - (b.m == null ? 1e9 : b.m); });
+        S.aed[k] = { items: items, err: d.ok ? null : d.message, at: Date.now() };
+      }).catch(function (e) { S.aed[k] = { items: [], err: e.message }; })
+        .then(function () { if (S.pub) renderPublic(); drawMap(S.last[visibleTab()] || null); });
+    }
+    return st;
+  }
+  function aedLink(a) {
+    var nm = encodeURIComponent((a.org || 'AED') + ' AED');
+    return S.origin && a.lat != null ? 'https://map.kakao.com/link/by/walk/' + encodeURIComponent('현재 위치') + ',' + S.origin.lat + ',' + S.origin.lon + '/' + nm + ',' + a.lat + ',' + a.lon
+      : a.lat != null ? 'https://map.kakao.com/link/to/' + nm + ',' + a.lat + ',' + a.lon : 'https://map.kakao.com/link/search/' + encodeURIComponent(a.addr || '');
+  }
+  function aedNearest() { var st = S.aed[aedKey()]; return st && st.items && st.items[0] && st.items[0].m != null ? st.items[0] : null; }
+  // mode: 'arrest' 지금 필요 · 'standby' 혹시 쓰러지면 (흉통 등)
+  function aedCard(mode) {
+    S.aedOn = true;
+    var st = aedState(), html = '<div class="card aed"><div class="cap">' + (mode === 'arrest' ? '가장 가까운 자동심장충격기(AED)' : '혹시 쓰러지면: 가까운 자동심장충격기(AED)') + '</div>';
+    html += '<p class="caption" style="color:var(--ink)">' + (mode === 'arrest'
+      ? '<b>주변 사람 한 명을 정확히 지목해 “AED 가져와 주세요”라고 부탁하세요.</b> 가슴압박은 멈추지 않습니다. 혼자라면 119 상황요원의 안내를 따르세요.'
+      : '환자가 반응이 없어지고 숨을 제대로 쉬지 않으면 바로 가슴압박을 시작하고, 다른 사람에게 아래 AED를 가져오게 하세요.') + '</p>';
+    if (st.unsupported) html += '<p class="caption">AED 위치는 ‘공공데이터포털 직접 연결’일 때 보여 드립니다. 지하철역·아파트 관리사무소·관공서·대형 건물 로비에 많이 있습니다.</p>';
+    else if (st.pending) html += '<p class="caption">가까운 AED를 찾는 중…</p>';
+    else if (st.err && !st.items.length) html += '<p class="caption">AED 정보를 불러오지 못했습니다 (' + esc(st.err) + '). 지하철역·아파트 관리사무소·관공서 로비를 찾아보세요.</p>';
+    else if (!st.items.length) html += '<p class="caption">근처에 등록된 AED를 찾지 못했습니다. 지하철역·아파트 관리사무소·관공서 로비를 찾아보세요.</p>';
+    else {
+      if (!S.origin) html += '<p class="caption">현재 위치를 켜면 가까운 순으로 거리와 걸어서 걸리는 시간을 보여 드립니다. 지금은 ' + esc(hnrRegion().sido + ' ' + hnrRegion().sigungu) + ' 목록입니다.</p>';
+      html += '<ul class="aed-list">' + st.items.slice(0, 3).map(function (a) {
+        var one = a.m != null ? Math.max(1, Math.round(a.m / WALK)) : null;
+        return '<li><div><b>' + esc(a.org || '설치 장소') + '</b>' + (a.place ? ' · ' + esc(a.place) : '') + '</div>' +
+          '<div class="d">' + (a.m != null ? (a.m < 1000 ? a.m + 'm' : (a.m / 1000).toFixed(1) + 'km') + '<small>걸어서 약 ' + one + '분 · 왕복 ' + one * 2 + '분</small>' : '') + '</div>' +
+          (a.addr ? '<div class="meta">' + esc(a.addr) + '</div>' : '') +
+          '<div class="acts"><a class="ghost" target="_blank" rel="noopener" href="' + esc(aedLink(a)) + '">카카오맵 길안내</a>' + (a.tel ? '<a class="ghost" href="tel:' + esc(tel(a.tel)) + '">관리자 ' + esc(a.tel) + '</a>' : '') + '</div></li>';
+      }).join('') + '</ul>';
+      var n = st.items[0];
+      if (mode === 'arrest' && n.m != null && n.m / WALK * 2 > 4) html += '<p class="caption">가장 가까운 AED도 왕복 4분이 넘습니다. 가져오는 동안에도 가슴압박을 계속하는 것이 가장 중요합니다.</p>';
+      html += '<p class="caption">출처: 국립중앙의료원 자동심장충격기 정보. 건물 개방 시간이나 관리 상태에 따라 바로 쓸 수 없을 수 있습니다. 지도에는 초록 표시로 나옵니다.</p>';
+    }
+    return html + '</div>';
+  }
+  function aedMarkers(LF) {
+    if (!S.aedOn) return;
+    var st = S.aed[aedKey()]; if (!st || !st.items) return;
+    st.items.slice(0, 10).forEach(function (a) {
+      if (a.lat == null) return;
+      var icon = LF.divIcon({ className: 'mkwrap', html: '<span class="mk aedmk">⚡</span>', iconSize: [26, 26], iconAnchor: [13, 13] });
+      LF.marker([a.lat, a.lon], { icon: icon, title: 'AED ' + (a.org || '') }).bindPopup('<b>AED · ' + esc(a.org || '') + '</b>' + (a.place ? '<br>' + esc(a.place) : '') + (a.m != null ? '<br>' + a.m + 'm' : '')).addTo(LAY);
+    });
+  }
   function call119Card(s) {
     var o = S.origin, k = okey(o), a = o ? S.addr[k] : null;
     if (o && !a && RT && S.addrPending !== k) {
@@ -1989,6 +2090,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
       '<li><span class="label">어디</span>여기는 ' + where + (o ? ' <small class="num">(' + o.lat.toFixed(5) + ', ' + o.lon.toFixed(5) + ')</small>' : '') + '</li>' +
       '<li><span class="label">무슨 일</span>' + esc(SAY[S.pub.key] || s.title) + esc(age) + '</li>' +
       (S.pub.key === 'stroke' ? '<li><span class="label">언제</span>증상이 시작된(마지막으로 정상이던) 시각은 ___시 ___분입니다.</li>' : '') +
+      (S.aedOn && aedNearest() ? '<li><span class="label">AED</span>가장 가까운 자동심장충격기는 ' + esc(aedNearest().org || '') + (aedNearest().place ? ' ' + esc(aedNearest().place) : '') + ' (약 ' + aedNearest().m + 'm)입니다.</li>' : '') +
       '<li><span class="label">그다음</span>전화를 먼저 끊지 말고 스피커폰으로 바꿔 상황요원 안내를 따르세요.</li></ol></div>';
   }
 
@@ -2132,7 +2234,11 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     if (aid && aid.dont && aid.dont.length) html += '<div class="label">하지 마세요</div><ul class="dont">' + aid.dont.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
     if (r.refs.length) html += '<p class="caption">근거: ' + r.refs.filter(function (k) { return L.REFS[k]; }).map(function (k) { return '<a target="_blank" rel="noopener" href="' + esc(L.REFS[k].u) + '">' + esc(L.REFS[k].t) + '</a>'; }).join(' · ') + '</p>';
     html += '</div>';
+    var aedMode = r.condition === 'arrest' ? 'arrest' : lv === 1 && ['chest', 'syncope', 'anaphylaxis', 'respiratory', 'poison'].indexOf(r.condition) >= 0 ? 'standby' : null;
+    S.aedOn = !!aedMode;
+    if (aedMode === 'arrest') html += aedCard('arrest');
     if (lv === 1) html += call119Card({ title: r.say });
+    if (aedMode === 'standby') html += aedCard('standby');
     if (lv === 3) html += hnrCard();
     html += '<div class="sub">' + (lv === 1 ? '<div class="cap">참고: 이 상황을 받을 수 있는 근처 응급실</div><p class="caption">병원 선정은 구급대가 합니다. 아래는 보호자 참고용입니다.</p>' : lv === 2 ? '<div class="cap">지금 갈 수 있는 응급실</div><p class="caption">문진 결과에 필요한 장비·진료가 실시간으로 가능한 곳을 먼저 보여 줍니다.</p>' : '<div class="cap">응급실이 필요해지면 갈 곳</div>') + '</div><div id="pub-match"></div>';
     out.innerHTML = html;
@@ -2157,7 +2263,10 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     if (s.dont && s.dont.length) html += '<div class="label">하지 마세요</div><ul class="dont">' + s.dont.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>';
     html += '<p class="caption">근거: ' + s.refs.map(function (r) { return '<a target="_blank" rel="noopener" href="' + esc(L.REFS[r].u) + '">' + esc(L.REFS[r].t) + '</a>'; }).join(' · ') + '</p>';
     html += '<label class="age">환자 나이 <input type="number" id="pub-age" min="0" max="120" value="' + esc(S.pub.age == null ? '' : S.pub.age) + '" inputmode="numeric"> 세</label></div>';
+    S.aedOn = S.pub.key === 'arrest' || S.pub.key === 'chest';
+    if (S.pub.key === 'arrest') html += aedCard('arrest');
     if (now) html += call119Card(s);
+    if (S.pub.key === 'chest') html += aedCard('standby');
     if (!now) html += hnrCard();
     html += '<div class="sub">' + (now ? '<div class="cap">참고: 이 상황을 받을 수 있는 근처 응급실</div><p class="caption">병원 선정은 구급대가 합니다. 아래는 보호자 참고용입니다.</p>' : '<div class="cap">갈 수 있는 응급실</div>') + '</div><div id="pub-match"></div>';
     out.innerHTML = html;
