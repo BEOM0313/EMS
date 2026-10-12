@@ -1984,6 +1984,8 @@ module.exports = { Service: Service };
   // 기본 인증키(응급의료정보조회서비스 활용신청 키, Encoding 형태). 파일을 다른 사람에게 공유할 때는 이 값을 지우세요.
   var DEFAULT_KEY = 'qAqJGkeQNSF2f0xdDwcEXQl5Urbr7bUbTKbIEfWz59TBJiu2t273bBphOJ0Kb6Wmj4kj%2BZqTFuV15S8KjQTJiQ%3D%3D';
   var cfg = lsGet(CFG) || (DEFAULT_KEY ? { mode: 'direct' } : { mode: null }); // 기본 키가 있으면 바로 직접 연결
+  // 길찾기 서버: 비워 두면 공개 OSRM(routing.openstreetmap.de), 값이 있으면 자체 OSRM 서버 (osrm/ 폴더)
+  var OSRM_KEY = 'medipath.osrm'; window.MP_ROUTE_CFG = Object.assign({}, window.MP_ROUTE_CFG || {}, { osrm: lsGet(OSRM_KEY) || null });
   var key = cfg.key || DEFAULT_KEY || ''; // 기억하지 않으면 이 탭이 열려 있는 동안만 메모리에 둔다
   var client = null;
 
@@ -2054,6 +2056,7 @@ module.exports = { Service: Service };
       '<label class="chk"><input type="checkbox" id="conn-remember"' + (cfg.remember ? ' checked' : '') + '> 이 브라우저에 기억</label></div>' +
       '<div class="conn-row" data-show="proxy"><label>서버 주소<input id="conn-proxy" value="' + esc(cfg.proxy || 'http://localhost:8080') + '"></label></div>' +
       '<div class="conn-row"><button class="cta" id="conn-go">연결하고 조회</button>' + (cfg.remember ? '<button class="ghost" id="conn-forget">저장된 키 지우기</button>' : '') + '</div>' +
+      '<div class="conn-row"><label>길찾기 서버 (자체 OSRM, 비우면 공개 서버)<input id="conn-osrm" value="' + esc(lsGet(OSRM_KEY) || '') + '" placeholder="예: https://osrm.내도메인.kr"></label><button class="ghost" id="osrm-test" type="button">서버 확인</button></div><p class="caption" id="osrm-msg"></p>' +
       '<p class="caption">' + (DEFAULT_KEY ? '기본 인증키가 파일에 들어 있어 바로 조회됩니다(파일을 공유하면 키도 함께 공유됩니다). ' : '인증키는 파일에 들어 있지 않으며, ') + '이 브라우저에서 공공데이터포털(apis.data.go.kr)로만 전송됩니다. 공용 PC에서는 ‘기억’을 켜지 마세요. 여러 사람이 쓰는 서비스로 공개할 때는 키가 노출되지 않도록 ‘서버 경유’ 방식을 쓰세요.</p>' +
       '</details>';
     function sync() { var m = (el.querySelector('[name=cmode]:checked') || {}).value; [].forEach.call(el.querySelectorAll('[data-show]'), function (r) { r.hidden = r.dataset.show !== m; }); }
@@ -2070,6 +2073,13 @@ module.exports = { Service: Service };
         else document.body.classList.remove('conn-open');
         var cb = document.getElementById('conn-btn'); if (cb) cb.setAttribute('aria-expanded', document.body.classList.contains('conn-open'));
       });
+    });
+    el.querySelector('#osrm-test').addEventListener('click', function () {
+      var v = el.querySelector('#conn-osrm').value.trim(), msg = el.querySelector('#osrm-msg');
+      if (!v) { lsDel(OSRM_KEY); msg.textContent = '공개 OSRM 서버를 씁니다. 새로고침하면 적용됩니다.'; return; }
+      msg.textContent = '확인 중…';
+      new window.MPRoute.Router({}).ping(v).then(function (min) { lsSet(OSRM_KEY, v.replace(/\/+$/, '')); msg.textContent = '연결됨: 시험 경로 ' + min + '분. 저장했습니다. 새로고침하면 이 서버를 씁니다.'; })
+        .catch(function (e) { msg.textContent = '연결 실패 (' + e.message + '). 주소, CORS 설정, https 여부를 확인하세요. 저장하지 않았습니다.'; });
     });
     var f = el.querySelector('#conn-forget');
     if (f) f.addEventListener('click', function () { key = DEFAULT_KEY || ''; cfg = DEFAULT_KEY ? { mode: 'direct' } : { mode: null }; lsDel(CFG); Object.keys(localStorage).forEach(function (k) { if (k.indexOf(CACHE) === 0) lsDel(k); }); window.MPSource = makeSource(); render(); window.MPApp.reload(); });
@@ -2101,6 +2111,10 @@ var DEFAULTS = {
 function Router(opts) {
   opts = opts || {};
   this.cfg = Object.assign({}, DEFAULTS, opts);
+  // 자체 OSRM 서버(osrm/ 폴더 구성): base 아래 /routed-car · /routed-foot 경로. 실패하면 공개 서버로 자동 전환
+  this.own = opts.osrm ? String(opts.osrm).replace(/\/+$/, '') : null;
+  if (this.own) { this.cfg.car = this.own + '/routed-car'; this.cfg.foot = this.own + '/routed-foot'; }
+  this.used = this.own ? 'own' : 'public';
   this.fetchJson = opts.fetchJson || function (url) { return fetch(url, { headers: { Accept: 'application/json' } }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); };
   this.queue = {}; this.cache = new Map();
 }
@@ -2111,7 +2125,20 @@ Router.prototype.get = function (url) {
   var prev = this.queue[host] || Promise.resolve();
   var run = prev.then(function () { return self.fetchJson(url); });
   this.queue[host] = run.catch(function () {}).then(function () { return new Promise(function (r) { setTimeout(r, self.cfg.gapMs); }); });
-  return run.then(function (d) { self.cache.set(url, { at: Date.now(), data: d }); return d; });
+  return run.then(function (d) { self.cache.set(url, { at: Date.now(), data: d }); if (self.own && url.indexOf(self.own) === 0) self.used = 'own'; return d; }, function (e) {
+    // 자체 서버가 꺼져 있거나 막히면 같은 요청을 공개 OSRM 서버로 다시 보낸다
+    if (self.own && url.indexOf(self.own) === 0) {
+      var alt = url.replace(self.own + '/routed-car', DEFAULTS.car).replace(self.own + '/routed-foot', DEFAULTS.foot);
+      self.used = 'fallback';
+      return self.get(alt);
+    }
+    throw e;
+  });
+};
+// 서버 확인: 서울시청 → 광화문 경로 1건
+Router.prototype.ping = function (base) {
+  var url = String(base).replace(/\/+$/, '') + '/routed-car/route/v1/driving/126.97797,37.56654;126.97689,37.57592?overview=false';
+  return this.fetchJson(url).then(function (d) { if (d.code !== 'Ok') throw new Error('OSRM ' + d.code); return Math.round(d.routes[0].duration / 60 * 10) / 10; });
 };
 
 function ll(p) { return (+p.lon).toFixed(6) + ',' + (+p.lat).toFixed(6); }
@@ -2254,7 +2281,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     el.textContent = !RT ? '' : !S.origin ? '출발지를 정하면(현재 위치 · 검색 · 지도 클릭) 도로 기준 차량·도보 시간을 계산합니다.' :
       R && R.pending ? '길찾기 계산 중… (오픈스트리트맵 OSRM)' :
       R && R.err ? '길찾기 서버에 연결하지 못해 직선거리로 추정합니다 (' + R.err + ')' :
-      R && Object.keys(R.car).length ? '도착 시간: 오픈스트리트맵 도로 기준 (OSRM) · 실시간 교통 미반영 · 지도를 누르면 출발지가 바뀝니다' : '';
+      R && Object.keys(R.car).length ? '도착 시간: 오픈스트리트맵 도로 기준 (' + ({ own: '자체 OSRM 서버', fallback: '자체 서버 응답 없음 → 공개 OSRM 서버', public: '공개 OSRM 서버' }[RT.used] || 'OSRM') + ') · 실시간 교통 미반영 · 지도를 누르면 출발지가 바뀝니다' : '';
   }
 
   /* ── 지도 (Leaflet + 오픈스트리트맵 타일) ── */
@@ -3039,7 +3066,7 @@ return { Router: Router, DEFAULTS: DEFAULTS };
     document.body.dataset.tab = 'public';
     function panel(cls, btn) { var on = document.body.classList.toggle(cls); $(btn).setAttribute('aria-expanded', on); if (on) window.scrollTo({ top: 0, behavior: 'smooth' }); }
     $('#loc-chip').addEventListener('click', function () { panel('where-open', '#loc-chip'); });
-    $('#conn-btn').addEventListener('click', function () { panel('conn-open', '#conn-btn'); });
+    $('#conn-btn').addEventListener('click', function () { panel('conn-open', '#conn-btn'); var d = $('#conn details'); if (d && document.body.classList.contains('conn-open')) d.open = true; });
     renderSituations(); renderRefs(); bindTriage();
     $$('.tabs [role=tab]').forEach(function (b) { b.addEventListener('click', function () { $$('.tabs [role=tab]').forEach(function (x) { x.setAttribute('aria-selected', x === b); }); $$('.tab').forEach(function (t) { t.hidden = t.id !== 'tab-' + b.dataset.tab; }); document.body.dataset.tab = b.dataset.tab; placeMap(); drawMap(S.last['tab-' + b.dataset.tab] || null); }); });
     $('#ems-form').addEventListener('input', renderEms); $('#ems-form').addEventListener('change', renderEms);
